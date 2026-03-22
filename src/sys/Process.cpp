@@ -1,22 +1,21 @@
 #include "include/sys/Process.hpp"
-#include "include/global/NekoGui.hpp"
+#include "include/global/Configs.hpp"
 
 #include <QTimer>
 #include <QDir>
 #include <QApplication>
 
-namespace NekoGui_sys {
+
+
+#include "include/ui/mainwindow.h"
+
+namespace Configs_sys {
     CoreProcess::~CoreProcess() {
     }
 
     void CoreProcess::Kill() {
-        if (killed) return;
-        killed = true;
-
-        if (!crashed) {
-            kill();
-            waitForFinished(500);
-        }
+        kill();
+        waitForFinished();
     }
 
     CoreProcess::CoreProcess(const QString &core_path, const QStringList &args) {
@@ -25,10 +24,10 @@ namespace NekoGui_sys {
 
         connect(this, &QProcess::readyReadStandardOutput, this, [&]() {
             auto log = readAllStandardOutput();
-            if (!NekoGui::dataStore->core_running) {
+            if (!Configs::dataManager->settingsRepo->core_running) {
                 if (log.contains("Core listening at")) {
                     // The core really started
-                    NekoGui::dataStore->core_running = true;
+                    Configs::dataManager->settingsRepo->core_running = true;
                     MW_dialog_message("ExternalProcess", "CoreStarted," + Int2String(start_profile_when_core_is_up));
                     start_profile_when_core_is_up = -1;
                 } else if (log.contains("failed to serve")) {
@@ -41,7 +40,7 @@ namespace NekoGui_sys {
                 MW_show_log("Extra Core exited, stopping profile...");
                 MW_dialog_message("ExternalProcess", "Crashed");
             }
-            if (logCounter.fetchAndAddRelaxed(log.count("\n")) > NekoGui::dataStore->max_log_line) return;
+            if (logCounter.fetchAndAddRelaxed(log.count("\n")) > Configs::dataManager->settingsRepo->max_log_line) return;
             MW_show_log(log);
         });
         connect(this, &QProcess::readyReadStandardError, this, [&]() {
@@ -56,15 +55,17 @@ namespace NekoGui_sys {
         });
         connect(this, &QProcess::stateChanged, this, [&](ProcessState state) {
             if (state == NotRunning) {
-                NekoGui::dataStore->core_running = false;
+                Configs::dataManager->settingsRepo->core_running = false;
                 qDebug() << "Core stated changed to not running";
             }
 
-            if (!NekoGui::dataStore->prepare_exit && state == NotRunning) {
+            if (!Configs::dataManager->settingsRepo->prepare_exit && state == NotRunning) {
                 if (failed_to_start) return; // no retry
                 if (restarting) return;
 
-                MW_dialog_message("ExternalProcess", "CoreCrashed");
+                MW_show_log("[Fatal] " + QObject::tr("Core exited, cleaning up..."));
+
+                GetMainWindow()->profile_stop(true, true);
 
                 // Retry rate limit
                 if (coreRestartTimer.isValid()) {
@@ -78,9 +79,9 @@ namespace NekoGui_sys {
                 }
 
                 // Restart
-                start_profile_when_core_is_up = NekoGui::dataStore->started_id;
-                MW_show_log("[Fatal] " + QObject::tr("Core exited, restarting."));
-                setTimeout([=] { Restart(); }, this, 200);
+                start_profile_when_core_is_up = Configs::dataManager->settingsRepo->started_id;
+                MW_show_log("[Warn] " + QObject::tr("Restarting the core ..."));
+                setTimeout([=,this] { Restart(); }, this, 200);
             }
         });
     }
@@ -102,4 +103,4 @@ namespace NekoGui_sys {
         restarting = false;
     }
 
-} // namespace NekoGui_sys
+} // namespace Configs_sys

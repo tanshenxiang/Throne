@@ -2,7 +2,7 @@
 #include <QMutex>
 #include <QString>
 
-namespace NekoGui_traffic
+namespace Stats
 {
     constexpr int IDKEY = 242315;
 
@@ -12,7 +12,9 @@ namespace NekoGui_traffic
         ByDownload,
         ByUpload,
         ByProcess,
-        ByTraffic
+        ByTraffic,
+        ByOutbound,
+        ByProtocol
     };
 
     class ConnectionMetadata

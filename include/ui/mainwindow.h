@@ -1,22 +1,25 @@
 #pragma once
 
 #include <QMainWindow>
-#include <core/server/gen/libcore.pb.h>
 #include <include/global/HTTPRequestHelper.hpp>
+#ifndef Q_MOC_RUN
+#include <core/server/gen/libcore.pb.h>
+#endif
 
-#include "include/global/NekoGui.hpp"
+#include "include/global/Configs.hpp"
 #include "include/stats/connections/connectionLister.hpp"
 #include "3rdparty/qv2ray/v2/ui/widgets/speedchart/SpeedWidget.hpp"
+#include "include/database/entities/Profile.h"
 #ifdef Q_OS_LINUX
 #include <QtDBus>
 #endif
 
 #ifndef MW_INTERFACE
 
-#include <QTime>
-#include <QTableWidgetItem>
 #include <QKeyEvent>
 #include <QSystemTrayIcon>
+#include <QQueue>
+#include <QWaitCondition>
 #include <QProcess>
 #include <QTextDocument>
 #include <QShortcut>
@@ -25,14 +28,13 @@
 #include <QThreadPool>
 
 #include "group/GroupSort.hpp"
-
-#include "include/dataStore/ProxyEntity.hpp"
 #include "include/global/GuiUtils.hpp"
+#include "include/ui/utils/ProfilesTableModel.h"
 #include "ui_mainwindow.h"
 
 #endif
 
-namespace NekoGui_sys {
+namespace Configs_sys {
     class CoreProcess;
 }
 
@@ -52,7 +54,7 @@ public:
 
     void prepare_exit();
 
-    void refresh_proxy_list(const int &id = -1);
+    void refresh_proxy_list(const QList<int> &ids = {}, bool mayNeedReset = false);
 
     void show_group(int gid);
 
@@ -62,19 +64,17 @@ public:
 
     void update_traffic_graph(int proxyDl, int proxyUp, int directDl, int directUp);
 
-    void neko_start(int _id = -1);
+    void profile_start(int _id = -1);
 
-    void neko_stop(bool crash = false, bool sem = false, bool manual = false);
+    void profile_stop(bool crash = false, bool block = false, bool manual = false);
 
-    void neko_set_spmode_system_proxy(bool enable, bool save = true);
+    void set_spmode_system_proxy(bool enable, bool save = true);
 
-    void neko_toggle_system_proxy();
+    void toggle_system_proxy();
 
-    void neko_set_spmode_vpn(bool enable, bool save = true);
+    void set_spmode_vpn(bool enable, bool save = true);
 
     bool get_elevated_permissions(int reason = 3);
-
-    void show_log_impl(const QString &log);
 
     void start_select_mode(QObject *context, const std::function<void(int)> &callback);
 
@@ -82,11 +82,9 @@ public:
 
     bool StopVPNProcess();
 
-    void DownloadAssets(const QString &geoipUrl, const QString &geositeUrl);
+    void UpdateConnectionList(const QMap<QString, Stats::ConnectionMetadata>& toUpdate, const QMap<QString, Stats::ConnectionMetadata>& toAdd);
 
-    void UpdateConnectionList(const QMap<QString, NekoGui_traffic::ConnectionMetadata>& toUpdate, const QMap<QString, NekoGui_traffic::ConnectionMetadata>& toAdd);
-
-    void UpdateConnectionListWithRecreate(const QList<NekoGui_traffic::ConnectionMetadata>& connections);
+    void UpdateConnectionListWithRecreate(const QList<Stats::ConnectionMetadata>& connections);
 
     void UpdateDataView(bool force = false);
 
@@ -154,9 +152,9 @@ private slots:
 
     void on_menu_update_subscription_triggered();
 
-    void on_proxyListTable_itemDoubleClicked(QTableWidgetItem *item);
+    void on_profilesTableView_doubleClicked(const QModelIndex &index);
 
-    void on_proxyListTable_customContextMenuRequested(const QPoint &pos);
+    void on_profilesTableView_customContextMenuRequested(const QPoint &pos);
 
     void on_tabWidget_currentChanged(int index);
 
@@ -164,15 +162,15 @@ private slots:
 
 private:
     Ui::MainWindow *ui;
+    ProfilesTableModel *profilesTableModel = nullptr;
     QSystemTrayIcon *tray;
-    QShortcut *shortcut_ctrl_f = new QShortcut(QKeySequence("Ctrl+F"), this);
-    QShortcut *shortcut_esc = new QShortcut(QKeySequence("Esc"), this);
+    QShortcut *shortcut_esc = new QShortcut(QKeySequence::Cancel, this);
     //
-    QThreadPool *speedTestThreadPool = new QThreadPool(this);
+    QThreadPool *parallelCoreCallPool = new QThreadPool(this);
     std::atomic<bool> stopSpeedtest = false;
     QMutex speedtestRunning;
     //
-    NekoGui_sys::CoreProcess *core_process;
+    Configs_sys::CoreProcess *core_process;
     qint64 vpn_pid = 0;
     //
     bool qvLogAutoScoll = true;
@@ -180,20 +178,20 @@ private:
     //
     QString title_error;
     int icon_status = -1;
-    std::shared_ptr<NekoGui::ProxyEntity> running;
+    std::shared_ptr<Configs::Profile> running;
     QString traffic_update_cache;
-    QTime last_test_time;
+    qint64 last_test_time = 0;
     //
     int proxy_last_order = -1;
     bool select_mode = false;
     QMutex mu_starting;
     QMutex mu_stopping;
     QMutex mu_exit;
-    QSemaphore sem_stopped;
     int exit_reason = 0;
     //
-    QMutex mu_download_assets;
     QMutex mu_download_update;
+    //
+    QMutex connectionListMu;
     //
     int toolTipID;
     //
@@ -207,51 +205,101 @@ private:
     libcore::SpeedTestResult currentTestResult;
     DownloadProgressReport currentDownloadReport; // could use a list, but don't think can show more than one anyways
 
-    QList<std::shared_ptr<NekoGui::ProxyEntity>> get_now_selected_list();
+    // shortcuts
+    QList<QShortcut*> hiddenMenuShortcuts;
 
-    QList<std::shared_ptr<NekoGui::ProxyEntity>> get_selected_or_group();
+    QStringList remoteRouteProfiles;
+    QMutex mu_remoteRouteProfiles;
+
+    // search
+    bool searchEnabled = false;
+    QString addressFilterString;
+    QString nameFilterString;
+    QString typeFilterString;
+    QString countryFilterString;
+
+    // log
+    QStringList includeKeywords;
+    QStringList excludeKeywords;
+    QRegularExpression includeCombined;
+    QRegularExpression excludeCombined;
+    QMutex logMutex;
+    QQueue<QString> logQueue;
+    QWaitCondition logWaiter;
+
+    void append_log(const QString &log);
+
+    void log_process_loop();
+
+    bool should_print_log(const QString &log);
+
+    void updateLogFilterFields();
+
+    QList<int> filterProfilesList(const QList<int>& profileIDs);
+
+    QList<int> get_now_selected_list();
+
+    QList<int> get_selected_or_group();
+
+    void clearUnavailableProfiles(bool confirm = true, QList<int> profileIDs = {});
 
     void dialog_message_impl(const QString &sender, const QString &info);
 
-    void refresh_proxy_list_impl(const int &id = -1, GroupSortAction groupSortAction = {});
+    void refresh_proxy_list_impl(const QList<int> &ids = {}, bool mayNeedReset = false);
 
-    void refresh_proxy_list_impl_refresh_data(const int &id = -1, bool stopping = false);
+    void refresh_proxy_list_impl_refresh_data(const QList<int>& ids = {}, bool mayNeedReset = false);
 
-    void refresh_table_item(int row, const std::shared_ptr<NekoGui::ProxyEntity>& profile, bool stopping);
+    void parseQrImage(const QPixmap *image);
 
     void keyPressEvent(QKeyEvent *event) override;
 
     void closeEvent(QCloseEvent *event) override;
 
+    void dragEnterEvent(QDragEnterEvent *event);
+
+    void dropEvent(QDropEvent* event) override;
+
     //
 
     void HotkeyEvent(const QString &key);
 
-    void RegisterShortcuts();
+    void RegisterHiddenMenuShortcuts(bool unregister = false);
 
-    // grpc
+    void setActionsData();
 
-    static void setup_grpc();
+    QList<QAction*> getActionsForShortcut();
 
-    void urltest_current_group(const QList<std::shared_ptr<NekoGui::ProxyEntity>>& profiles);
+    void loadShortcuts();
+
+    // rpc
+
+    static void setup_rpc();
+
+    void urltest_current_group(const QList<int>& profileIDs);
+
+    void iptest_current_group(const QList<int>& profileIDs);
 
     void stopTests();
 
-    void runURLTest(const QString& config, bool useDefault, const QStringList& outboundTags, const QMap<QString, int>& tag2entID, int entID = -1);
+    void runURLTest(const QString& config, const QString& xrayConfig, bool useDefault, const QStringList& outboundTags, const QMap<QString, int>& tag2entID, int entID = -1);
+
+    void runIPTest(const QString& config, const QString& xrayConfig, bool useDefault, const QStringList& outboundTags, const QMap<QString, int>& tag2entID, int entID = -1);
 
     void url_test_current();
 
-    void speedtest_current_group(const QList<std::shared_ptr<NekoGui::ProxyEntity>>& profiles, bool testCurrent = false);
+    void speedtest_current_group(const QList<int>& profileIDs, bool testCurrent = false);
 
-    void runSpeedTest(const QString& config, bool useDefault, bool testCurrent, const QStringList& outboundTags, const QMap<QString, int>& tag2entID, int entID = -1);
-
-    static void stop_core_daemon();
+    void runSpeedTest(const QString& config, const QString& xrayConfig, bool useDefault, bool testCurrent, const QStringList& outboundTags, const QMap<QString, int>& tag2entID, int entID = -1);
 
     bool set_system_dns(bool set, bool save_set = true);
 
     void CheckUpdate();
 
     void setupConnectionList();
+
+    void querySpeedtest(QDateTime lastProxyListUpdate, const QMap<QString, int>& tag2entID, bool testCurrent);
+
+    void queryCountryTest(const QMap<QString, int>& tag2entID, bool testCurrent);
 
 protected:
     bool eventFilter(QObject *obj, QEvent *event) override;

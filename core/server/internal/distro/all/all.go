@@ -1,6 +1,6 @@
 package all
 
 import (
-	_ "nekobox_core/internal/boxapi"
-	_ "nekobox_core/internal/boxdns"
+	_ "ThroneCore/internal/boxdns"
+	_ "github.com/xtls/xray-core/main/distro/all"
 )

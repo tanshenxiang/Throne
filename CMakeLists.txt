@@ -1,15 +1,14 @@
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.20)
 
-project(nekoray VERSION 0.1)
+project(Throne VERSION 0.1)
 
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_POLICY_DEFAULT_CMP0069 NEW)
-if (NOT CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND WIN32)
-    set(CMAKE_INTERPROCEDURAL_OPTIMIZATION ON)
-endif ()
+if(MSVC)
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+endif()
 
 find_package(Qt6 REQUIRED COMPONENTS Widgets Network LinguistTools DBus)
 
@@ -30,10 +29,12 @@ else ()
     include("cmake/linux/linux.cmake")
 endif ()
 
-#### default prefix path ####
+#### For Dumps ####
+if (NOT MSVC)
+    add_compile_options(-fno-omit-frame-pointer)
+endif()
 
-list(APPEND NKR_LIBS ${CMAKE_SOURCE_DIR}/libs/deps/built)
-list(APPEND CMAKE_PREFIX_PATH ${NKR_LIBS})
+#### default prefix path ####
 
 message("[CMAKE_PREFIX_PATH] ${CMAKE_PREFIX_PATH}")
 
@@ -64,11 +65,12 @@ set(PROJECT_SOURCES
         ${PLATFORM_SOURCES}
 
         src/main.cpp
-        src/global/NekoGui.cpp
-        src/global/NekoGui_Utils.cpp
+        src/global/Configs.cpp
+        src/global/Utils.cpp
         src/global/HTTPRequestHelper.cpp
+        src/global/DeviceDetailsHelper.cpp
+        src/global/CountryHelper.cpp
 
-        3rdparty/base64.cpp
         3rdparty/qrcodegen.cpp
         3rdparty/QtExtKeySequenceEdit.cpp
         3rdparty/QrDecoder.cpp
@@ -88,21 +90,22 @@ set(PROJECT_SOURCES
         3rdparty/quirc/quirc.c
         3rdparty/quirc/version_db.c
 
-        src/api/gRPC.cpp
+        3rdparty/SQLiteCpp/src/Backup.cpp
+        3rdparty/SQLiteCpp/src/Column.cpp
+        3rdparty/SQLiteCpp/src/Database.cpp
+        3rdparty/SQLiteCpp/src/Exception.cpp
+        3rdparty/SQLiteCpp/src/Savepoint.cpp
+        3rdparty/SQLiteCpp/src/sqlite3.c
+        3rdparty/SQLiteCpp/src/Statement.cpp
+        3rdparty/SQLiteCpp/src/Transaction.cpp
 
-        src/dataStore/Database.cpp
+        src/api/RPC.cpp
+
         src/stats/traffic/TrafficLooper.cpp
-        src/dataStore/ProfileFilter.cpp
-        src/configs/ConfigBuilder.cpp
-
-        src/configs/proxy/AbstractBean.cpp
-        src/configs/proxy/Bean2CoreObj_box.cpp
-        src/configs/proxy/Bean2Link.cpp
-        src/configs/proxy/Link2Bean.cpp
-        include/configs/proxy/ChainBean.hpp # translate
 
         include/configs/sub/GroupUpdater.hpp
         src/configs/sub/GroupUpdater.cpp
+        src/configs/sub/clash.cpp
 
         include/sys/Process.hpp
         src/sys/Process.cpp
@@ -112,10 +115,17 @@ set(PROJECT_SOURCES
         src/ui/setting/ThemeManager.cpp
         src/ui/setting/Icon.cpp
 
-        src/ui/mainwindow_grpc.cpp
+        src/ui/mainwindow_rpc.cpp
         src/ui/mainwindow.cpp
         include/ui/mainwindow.h
         include/ui/mainwindow.ui
+        include/ui/utils/ProfilesTableModel.h
+        src/ui/utils/ProfilesTableModel.cpp
+        include/ui/utils/ProfilesTableView.h
+        src/ui/utils/ProfilesTableView.cpp
+        include/ui/utils/ProfilesTableVerticalHeader.h
+        src/ui/utils/ProfilesTableVerticalHeader.cpp
+        include/ui/utils/ProfilesTableFilterHeader.h
 
         include/ui/profile/dialog_edit_profile.h
         src/ui/profile/dialog_edit_profile.cpp
@@ -127,22 +137,36 @@ set(PROJECT_SOURCES
         include/ui/profile/edit_chain.h
         src/ui/profile/edit_chain.cpp
         include/ui/profile/edit_chain.ui
-        include/ui/profile/edit_socks_http.h
-        src/ui/profile/edit_socks_http.cpp
-        include/ui/profile/edit_socks_http.ui
         include/ui/profile/edit_shadowsocks.h
         src/ui/profile/edit_shadowsocks.cpp
         include/ui/profile/edit_shadowsocks.ui
         include/ui/profile/edit_vmess.h
         src/ui/profile/edit_vmess.cpp
         include/ui/profile/edit_vmess.ui
-        include/ui/profile/edit_trojan_vless.h
-        src/ui/profile/edit_trojan_vless.cpp
-        include/ui/profile/edit_trojan_vless.ui
-
-        include/ui/profile/edit_quic.h
-        src/ui/profile/edit_quic.cpp
-        include/ui/profile/edit_quic.ui
+        include/ui/profile/edit_vless.h
+        src/ui/profile/edit_vless.cpp
+        include/ui/profile/edit_vless.ui
+        include/ui/profile/edit_anytls.h
+        src/ui/profile/edit_anytls.cpp
+        include/ui/profile/edit_anytls.ui
+        include/ui/profile/edit_tailscale.h
+        src/ui/profile/edit_tailscale.cpp
+        include/ui/profile/edit_tailscale.ui
+        include/ui/profile/edit_trojan.h
+        src/ui/profile/edit_trojan.cpp
+        include/ui/profile/edit_trojan.ui
+        include/ui/profile/edit_http.h
+        src/ui/profile/edit_http.cpp
+        include/ui/profile/edit_http.ui
+        include/ui/profile/edit_socks.h
+        src/ui/profile/edit_socks.cpp
+        include/ui/profile/edit_socks.ui
+        include/ui/profile/edit_hysteria.h
+        src/ui/profile/edit_hysteria.cpp
+        include/ui/profile/edit_hysteria.ui
+        include/ui/profile/edit_tuic.h
+        src/ui/profile/edit_tuic.cpp
+        include/ui/profile/edit_tuic.ui
 
         include/ui/profile/edit_custom.h
         src/ui/profile/edit_custom.cpp
@@ -186,15 +210,12 @@ set(PROJECT_SOURCES
         include/ui/setting/RouteItem.h
         include/ui/setting/RouteItem.ui
 
-        res/neko.qrc
+        res/Throne.qrc
         ${QV2RAY_RC}
-        include/dataStore/RouteEntity.h
-        src/dataStore/RouteEntity.cpp
         res/darkstyle.qrc
         src/ui/profile/edit_ssh.cpp
         include/ui/profile/edit_ssh.h
         include/ui/profile/edit_ssh.ui
-        include/configs/proxy/SSHBean.h
         include/sys/macos/MacOS.h
 
         src/sys/linux/LinuxCap.cpp
@@ -206,38 +227,144 @@ set(PROJECT_SOURCES
         include/ui/mainwindow_interface.h
         include/stats/connections/connectionLister.hpp
         src/stats/connectionLister/connectionLister.cpp
-        src/configs/proxy/Json2Bean.cpp
         include/sys/windows/eventHandler.h
+        include/configs/baseConfig.h
+        include/configs/common/DialFields.h
+        include/configs/common/TLS.h
+        include/configs/common/multiplex.h
+        include/configs/common/transport.h
+        include/configs/common/Outbound.h
+        
+        # common impl
+        src/configs/common/DialFields.cpp
+        src/configs/common/TLS.cpp
+        src/configs/common/multiplex.cpp
+        src/configs/common/transport.cpp
+        src/configs/common/Outbound.cpp
+        include/configs/outbounds/socks.h
+        include/configs/outbounds/http.h
+        include/configs/outbounds/shadowsocks.h
+        include/configs/outbounds/vmess.h
+        include/configs/outbounds/trojan.h
+        include/configs/outbounds/hysteria.h
+        include/configs/outbounds/vless.h
+        include/configs/outbounds/tuic.h
+        include/configs/outbounds/anyTLS.h
+        include/configs/outbounds/ssh.h
+        
+        # outbounds impl
+        src/configs/outbounds/anyTLS.cpp
+        src/configs/outbounds/http.cpp
+        src/configs/outbounds/hysteria.cpp
+        src/configs/outbounds/shadowsocks.cpp
+        src/configs/outbounds/socks.cpp
+        src/configs/outbounds/ssh.cpp
+        src/configs/outbounds/tailscale.cpp
+        src/configs/outbounds/trojan.cpp
+        src/configs/outbounds/tuic.cpp
+        src/configs/outbounds/vless.cpp
+        src/configs/outbounds/vmess.cpp
+        src/configs/outbounds/wireguard.cpp
+        include/configs/generate.h
+        src/configs/generate.cpp
+        include/configs/common/utils.h
+        src/configs/common/utils.cpp
+        include/configs/outbounds/custom.h
+        include/configs/outbounds/chain.h
+        include/configs/outbounds/extracore.h
+        include/ui/profile/edit_socks.h
+        src/ui/profile/edit_socks.cpp
+        include/ui/profile/edit_socks.ui
+        include/ui/profile/edit_http.h
+        src/ui/profile/edit_http.cpp
+        include/ui/profile/edit_http.ui
+        include/ui/profile/edit_trojan.h
+        src/ui/profile/edit_trojan.cpp
+        include/ui/profile/edit_trojan.ui
+        include/ui/profile/edit_hysteria.h
+        src/ui/profile/edit_hysteria.cpp
+        include/ui/profile/edit_hysteria.ui
+        include/ui/profile/edit_tuic.h
+        src/ui/profile/edit_tuic.cpp
+        include/ui/profile/edit_tuic.ui
+        include/ui/profile/edit_advanced.h
+        src/ui/profile/edit_advanced.cpp
+        include/ui/profile/edit_advanced.ui
+        include/configs/common/xrayStreamSetting.h
+        include/configs/outbounds/xrayVless.h
+        include/configs/common/xrayMultiplex.h
+        src/configs/common/xrayMultiplex.cpp
+        src/configs/common/xrayStreamSetting.cpp
+        src/configs/outbounds/xrayVless.cpp
+        include/ui/profile/edit_xrayvless.h
+        src/ui/profile/edit_xrayvless.cpp
+        include/ui/profile/edit_xrayvless.ui
+        include/database/Database.h
+        src/database/Database.cpp
+        include/database/ProfilesRepo.h
+        include/database/GroupsRepo.h
+        include/database/RoutesRepo.h
+        include/database/SettingsRepo.h
+
+        include/database/entities/Profile.h
+        include/database/entities/Group.h
+        include/database/entities/RouteProfile.h
+        include/database/entities/RouteRule.h
+
+        src/database/entities/Profile.cpp
+        src/database/entities/Group.cpp
+        src/database/entities/RouteProfile.cpp
+        src/database/entities/RouteRule.cpp
+
+        src/database/ProfilesRepo.cpp
+        src/database/GroupsRepo.cpp
+        src/database/RoutesRepo.cpp
+
+        include/database/DatabaseManager.h
+        src/database/DatabaseManager.cpp
+
+        include/database/SettingsRepo.h
+        src/database/SettingsRepo.cpp
+        include/sys/linux/systemChecks.h
+        src/sys/linux/systemChecks.cpp
+        include/configs/sub/warp.h
+        src/configs/sub/warp.cpp
 )
 
+if (NOT APPLE AND Qt6_VERSION VERSION_GREATER_EQUAL 6.9.0)
+    list(APPEND PROJECT_SOURCES res/EmojiFont.qrc)
+    if (WIN32)
+        list(APPEND PROJECT_SOURCES res/EmojiFontWin.qrc)
+    endif ()
+endif ()
+
 # Qt exe
-qt_add_executable(nekoray
+qt_add_executable(Throne
         MANUAL_FINALIZATION
         ${PROJECT_SOURCES}
 )
 
 # Target
 
-set_property(TARGET nekoray PROPERTY AUTOUIC ON)
-set_property(TARGET nekoray PROPERTY AUTOMOC ON)
-set_property(TARGET nekoray PROPERTY AUTORCC ON)
+set_property(TARGET Throne PROPERTY AUTOUIC ON)
+set_property(TARGET Throne PROPERTY AUTOMOC ON)
+set_property(TARGET Throne PROPERTY AUTORCC ON)
 
 
 # Target Source macOS
 
-set(MACOSX_ICON ${CMAKE_SOURCE_DIR}/res/nekoray.icns)
+set(MACOSX_ICON ${CMAKE_SOURCE_DIR}/res/Throne.icns)
 if (APPLE)
-    target_sources(nekoray PRIVATE ${MACOSX_ICON})
+    target_sources(Throne PRIVATE ${MACOSX_ICON})
 endif ()
 
-set_target_properties(nekoray PROPERTIES
-        MACOSX_BUNDLE_ICON_FILE "nekoray.icns"
+set_target_properties(Throne PROPERTIES
+        MACOSX_BUNDLE_ICON_FILE "Throne.icns"
         RESOURCE ${MACOSX_ICON}
         MACOSX_BUNDLE_INFO_PLIST ${CMAKE_SOURCE_DIR}/res/MacOSXBundleInfo.plist
-        MACOSX_BUNDLE_GUI_IDENTIFIER moe.nekoray.macosx
+        MACOSX_BUNDLE_GUI_IDENTIFIER moe.Throne.macosx
         MACOSX_BUNDLE TRUE
         WIN32_EXECUTABLE TRUE
-
 )
 
 # Target Source Translations
@@ -250,19 +377,19 @@ set(TS_FILES
 set(LUPDATE_OPTIONS
         -locations none -no-obsolete
 )
-qt_add_lupdate(nekoray TS_FILES ${TS_FILES} OPTIONS ${LUPDATE_OPTIONS})
-qt_add_lrelease(nekoray TS_FILES ${TS_FILES} QM_FILES_OUTPUT_VARIABLE QM_FILES)
+qt_add_lupdate(Throne TS_FILES ${TS_FILES} OPTIONS ${LUPDATE_OPTIONS})
+qt_add_lrelease(Throne TS_FILES ${TS_FILES} QM_FILES_OUTPUT_VARIABLE QM_FILES)
 
 configure_file(res/translations/translations.qrc ${CMAKE_BINARY_DIR} COPYONLY)
-target_sources(nekoray PRIVATE ${CMAKE_BINARY_DIR}/translations.qrc)
+target_sources(Throne PRIVATE ${CMAKE_BINARY_DIR}/translations.qrc)
 
 # Target Link
 
-target_link_libraries(nekoray PRIVATE
+target_link_libraries(Throne PRIVATE
         Qt6::Widgets Qt6::Network Qt6::DBus
         Threads::Threads
         ${NKR_EXTERNAL_TARGETS}
         ${PLATFORM_LIBRARIES}
 )
 
-qt_finalize_executable(nekoray)
+qt_finalize_executable(Throne)

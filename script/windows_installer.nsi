@@ -1,17 +1,16 @@
-Name "Nekoray"
-OutFile "NekoraySetup.exe"
-InstallDir "$PROGRAMFILES\Nekoray"
-RequestExecutionLevel admin
+Name "Throne"
+OutFile "ThroneSetup.exe"
+InstallDir $APPDATA\Throne
+RequestExecutionLevel user
 
 !include MUI2.nsh
-!define MUI_ICON "res\nekoray.ico"
+!define MUI_ICON "res\Throne.ico"
 !define MUI_ABORTWARNING
-!define MUI_WELCOMEPAGE_TITLE "Welcome to Nekoray Installer"
-!define MUI_WELCOMEPAGE_TEXT "This wizard will guide you through the installation of Nekoray."
-!define MUI_FINISHPAGE_RUN "$INSTDIR\nekoray.exe"
-!define MUI_FINISHPAGE_RUN_TEXT "Launch Nekoray"
-!define stopCommand 'powershell -ExecutionPolicy Bypass -WindowStyle Hidden -command "&{Stop-Process -Id (Get-CimInstance -ClassName Win32_Process -Filter $\'Name = $\'$\'nekoray.exe$\'$\'$\' | Where-Object { $$_.ExecutablePath -eq $\'$INSTDIR\nekoray.exe$\' }).ProcessId -Force}"'
-
+!define MUI_WELCOMEPAGE_TITLE "Welcome to Throne Installer"
+!define MUI_WELCOMEPAGE_TEXT "This wizard will guide you through the installation of Throne."
+!define MUI_FINISHPAGE_RUN "$INSTDIR\Throne.exe"
+!define MUI_FINISHPAGE_RUN_TEXT "Launch Throne"
+!addplugindir .\script\
 
 !insertmacro MUI_PAGE_WELCOME
 !insertmacro MUI_PAGE_DIRECTORY
@@ -20,42 +19,60 @@ RequestExecutionLevel admin
 
 !insertmacro MUI_LANGUAGE "English"
 
-UninstallText "This will uninstall Nekoray. Do you wish to continue?"
-UninstallIcon "res\nekorayDel.ico"
+UninstallText "This will uninstall Throne. Do you wish to continue?"
+UninstallIcon "res\ThroneDel.ico"
+
+Function .onInit
+  ReadRegStr $R0 HKCU "Software\Throne" "InstallPath"
+  StrCmp $R0 "" +2
+  StrCpy $INSTDIR $R0
+FunctionEnd
+
+!macro AbortOnRunningApp EXEName
+  killModule:
+  FindProcDLL::FindProc ${EXEName}
+  Pop $R0
+  IntCmp $R0 1 0 notRunning
+    FindProcDLL::KillProc ${EXEName}
+    Sleep 1000
+    Goto killModule
+  notRunning:
+!macroend
 
 Section "Install"
   SetOutPath "$INSTDIR"
+  SetOverwrite on
 
-  ExecWait '${stopCommand}'
+  !insertmacro AbortOnRunningApp "$INSTDIR\Throne.exe"
 
-  File /r ".\deployment\windows64\*"
+  File /r ".\deployment\windows64\ThroneCore.exe"
+  File /r ".\deployment\windows64\Throne.exe"
+  File /r ".\deployment\windows64\updater.exe"
 
-  CreateShortcut "$desktop\Nekoray.lnk" "$instdir\nekoray.exe"
+  CreateShortcut "$desktop\Throne.lnk" "$instdir\Throne.exe"
+  CreateShortcut "$SMPROGRAMS\Throne.lnk" "$INSTDIR\Throne.exe" "" "$INSTDIR\Throne.exe" 0
 
-  CreateDirectory "$SMPROGRAMS\Nekoray"
-  CreateShortcut "$SMPROGRAMS\Nekoray\Nekoray.lnk" "$INSTDIR\nekoray.exe" "" "$INSTDIR\nekoray.exe" 0
-  CreateShortcut "$SMPROGRAMS\Nekoray\Uninstall Nekoray.lnk" "$INSTDIR\uninstall.exe"
-
-  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Nekoray" "DisplayName" "Nekoray"
-  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Nekoray" "UninstallString" "$INSTDIR\uninstall.exe"
-  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Nekoray" "InstallLocation" "$INSTDIR"
-  WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Nekoray" "NoModify" 1
-  WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Nekoray" "NoRepair" 1
+  WriteRegStr HKCU "Software\Throne" "InstallPath" "$INSTDIR"
+  
+  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Throne" "DisplayName" "Throne"
+  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Throne" "UninstallString" "$INSTDIR\uninstall.exe"
+  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Throne" "InstallLocation" "$INSTDIR"
+  WriteRegDWORD HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Throne" "NoModify" 1
+  WriteRegDWORD HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Throne" "NoRepair" 1
   WriteUninstaller "uninstall.exe"
 SectionEnd
 
 Section "Uninstall"
 
-  ExecWait '${stopCommand}'
+  !insertmacro AbortOnRunningApp "$INSTDIR\Throne.exe"
 
-  Delete "$SMPROGRAMS\Nekoray\Nekoray.lnk"
-  Delete "$SMPROGRAMS\Nekoray\Uninstall Nekoray.lnk"
-  Delete "$desktop\Nekoray.lnk"
-  RMDir "$SMPROGRAMS\Nekoray"
+  Delete "$SMPROGRAMS\Throne.lnk"
+  Delete "$desktop\Throne.lnk"
+  RMDir "$SMPROGRAMS\Throne"
 
   RMDir /r "$INSTDIR"
 
   Delete "$INSTDIR\uninstall.exe"
 
-  DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Nekoray"
+  DeleteRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Throne"
 SectionEnd

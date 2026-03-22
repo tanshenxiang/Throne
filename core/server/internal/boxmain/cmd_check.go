@@ -4,12 +4,12 @@ import (
 	"context"
 	"github.com/sagernet/sing-box/include"
 
-	"nekobox_core/internal/boxbox"
+	"ThroneCore/internal/boxbox"
 )
 
 func Check(content []byte) error {
 	ctx := context.Background()
-	ctx = boxbox.Context(ctx, include.InboundRegistry(), include.OutboundRegistry(), include.EndpointRegistry())
+	ctx = boxbox.Context(ctx, include.InboundRegistry(), include.OutboundRegistry(), include.EndpointRegistry(), include.DNSTransportRegistry(), include.ServiceRegistry())
 	options, err := parseConfig(ctx, content)
 	if err != nil {
 		return err

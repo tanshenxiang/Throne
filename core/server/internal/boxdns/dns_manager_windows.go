@@ -1,6 +1,7 @@
 package boxdns
 
 import (
+	"ThroneCore/internal/boxdns/winipcfg"
 	"encoding/binary"
 	"github.com/gofrs/uuid/v5"
 	"github.com/sagernet/sing/common/control"
@@ -9,14 +10,13 @@ import (
 	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/registry"
 	"log"
-	"nekobox_core/internal/boxdns/winipcfg"
 	"net/netip"
 	"strings"
 )
 
 const (
 	nameServerRegistryKey = "NameServer"
-	localAddr             = "127.0.0.1"
+	localAddr             = "127.1.1.1"
 	dhcpMarkAddr          = "127.1.2.3"
 	setMarkAddr           = "127.3.2.1"
 )
@@ -25,7 +25,7 @@ var dnsIsSet bool
 
 func (d *DnsManager) HandleSystemDNS(ifc *control.Interface, flag int) {
 	if d == nil {
-		log.Println("No DnsManager, you may need to restart nekoray")
+		log.Println("No DnsManager, you may need to restart Throne")
 		return
 	}
 	if ifc != nil {
@@ -42,7 +42,7 @@ func (d *DnsManager) HandleSystemDNS(ifc *control.Interface, flag int) {
 
 func (d *DnsManager) getInterfaceGuid(ifc control.Interface) (string, error) {
 	if d.Monitor == nil {
-		return "", E.New("No Dns Manager, you may need to restart nekoray")
+		return "", E.New("No Dns Manager, you may need to restart Throne")
 	}
 	index := ifc.Index
 	u, err := ifcIdxtoUUID(index)
@@ -83,8 +83,8 @@ func ifcIdxtoUUID(index int) (*uuid.UUID, error) {
 
 func (d *DnsManager) isIfcDNSDhcp(ifc control.Interface) (dhcp bool, err error) {
 	if d == nil {
-		log.Println("No DnsManager, you may need to restart nekoray")
-		return false, E.New("No Dns Manager, you may need to restart nekoray")
+		log.Println("No DnsManager, you may need to restart Throne")
+		return false, E.New("No Dns Manager, you may need to restart Throne")
 	}
 
 	luid, err := winipcfg.LUIDFromIndex(uint32(ifc.Index))
@@ -200,7 +200,7 @@ func (d *DnsManager) setSystemDNS(ifx control.Interface) {
 	if wasSet && len(newDnsServers) > 0 && newDnsServers[0].String() == localAddr {
 		newDnsServers = newDnsServers[1:]
 	}
-	serverAddr, _ := netip.ParseAddr("127.0.0.1")
+	serverAddr, _ := netip.ParseAddr(localAddr)
 	newDnsServers = append([]netip.Addr{serverAddr}, newDnsServers...)
 
 	dhcp, err := d.isIfcDNSDhcp(ifx)
@@ -226,8 +226,8 @@ func (d *DnsManager) setSystemDNS(ifx control.Interface) {
 
 func (d *DnsManager) SetSystemDNS(ifc *control.Interface, clear bool) error {
 	if d == nil {
-		log.Println("No DnsManager, you may need to restart nekoray")
-		return E.New("No dns Manager, you may need to restart nekoray")
+		log.Println("No DnsManager, you may need to restart Throne")
+		return E.New("No dns Manager, you may need to restart Throne")
 	}
 
 	if ifc == nil {
@@ -242,6 +242,7 @@ func (d *DnsManager) SetSystemDNS(ifc *control.Interface, clear bool) error {
 	if clear {
 		dnsIsSet = false
 		d.restoreSystemDNS(*ifc)
+		return nil
 		return nil
 	} else {
 		dnsIsSet = true

@@ -2,18 +2,18 @@
 
 #include <QClipboard>
 
-#include "include/dataStore/Database.hpp"
-
 #include "3rdparty/qv2ray/v2/ui/widgets/editors/w_JsonEditor.hpp"
 #include "include/global/GuiUtils.hpp"
-#include "include/configs/proxy/Preset.hpp"
 
 #include <QFile>
 #include <QMessageBox>
 #include <QShortcut>
 #include <QTimer>
 #include <QToolTip>
-#include <include/api/gRPC.h>
+#include <include/api/RPC.h>
+
+#include "include/configs/sub/warp.h"
+#include "include/database/RoutesRepo.h"
 
 void DialogManageRoutes::reloadProfileItems() {
     if (chainList.empty()) {
@@ -61,41 +61,42 @@ bool DialogManageRoutes::validate_dns_rules(const QString &rawString) {
 
 DialogManageRoutes::DialogManageRoutes(QWidget *parent) : QDialog(parent), ui(new Ui::DialogManageRoutes) {
     ui->setupUi(this);
-    auto profiles = NekoGui::profileManager->routes;
+    auto profiles = Configs::dataManager->routesRepo->GetAllRouteProfiles();
     for (const auto &item: profiles) {
-        chainList << item.second;
+        chainList << item;
     }
     if (chainList.empty()) {
-        auto defaultChain = NekoGui::RoutingChain::GetDefaultChain();
-        NekoGui::profileManager->AddRouteChain(defaultChain);
+        auto defaultChain = Configs::RouteProfile::GetDefaultChain();
+        Configs::dataManager->routesRepo->AddRouteProfile(defaultChain);
         chainList.append(defaultChain);
     }
-    currentRoute = NekoGui::profileManager->GetRouteChain(NekoGui::dataStore->routing->current_route_id);
+    currentRoute = Configs::dataManager->routesRepo->GetRouteProfile(Configs::dataManager->settingsRepo->current_route_id);
     if (currentRoute == nullptr) currentRoute = chainList[0];
 
     QStringList qsValue = {""};
     QString dnsHelpDocumentUrl;
 
-    ui->outbound_domain_strategy->addItems(Preset::SingBox::DomainStrategy);
-    ui->domainStrategyCombo->addItems(Preset::SingBox::DomainStrategy);
+    ui->default_domain_strategy->addItems(Configs::DomainStrategy::DomainStrategy);
+    ui->domainStrategyCombo->addItems(Configs::DomainStrategy::DomainStrategy);
     qsValue += QString("prefer_ipv4 prefer_ipv6 ipv4_only ipv6_only").split(" ");
     ui->dns_object->setPlaceholderText(DecodeB64IfValid("ewogICJzZXJ2ZXJzIjogW10sCiAgInJ1bGVzIjogW10sCiAgImZpbmFsIjogIiIsCiAgInN0cmF0ZWd5IjogIiIsCiAgImRpc2FibGVfY2FjaGUiOiBmYWxzZSwKICAiZGlzYWJsZV9leHBpcmUiOiBmYWxzZSwKICAiaW5kZXBlbmRlbnRfY2FjaGUiOiBmYWxzZSwKICAicmV2ZXJzZV9tYXBwaW5nIjogZmFsc2UsCiAgImZha2VpcCI6IHt9Cn0="));
     dnsHelpDocumentUrl = "https://sing-box.sagernet.org/configuration/dns/";
 
     ui->direct_dns_strategy->addItems(qsValue);
     ui->remote_dns_strategy->addItems(qsValue);
-    ui->enable_fakeip->setChecked(NekoGui::dataStore->fake_dns);
+    ui->local_override->setText(Configs::dataManager->settingsRepo->core_box_underlying_dns);
+    ui->enable_fakeip->setChecked(Configs::dataManager->settingsRepo->fake_dns);
     //
-    connect(ui->use_dns_object, &QCheckBox::checkStateChanged, this, [=](int state) {
+    connect(ui->use_dns_object, &QCheckBox::stateChanged, this, [=,this](int state) {
         auto useDNSObject = state == Qt::Checked;
         ui->simple_dns_box->setDisabled(useDNSObject);
         ui->dns_object->setDisabled(!useDNSObject);
     });
-    ui->use_dns_object->checkStateChanged(Qt::Unchecked); // uncheck to uncheck
-    connect(ui->dns_document, &QPushButton::clicked, this, [=] {
+    ui->use_dns_object->stateChanged(Qt::Unchecked); // uncheck to uncheck
+    connect(ui->dns_document, &QPushButton::clicked, this, [=,this] {
         MessageBoxInfo("DNS", dnsHelpDocumentUrl);
     });
-    connect(ui->format_dns_object, &QPushButton::clicked, this, [=] {
+    connect(ui->format_dns_object, &QPushButton::clicked, this, [=,this] {
         auto obj = QString2QJsonObject(ui->dns_object->toPlainText());
         if (obj.isEmpty()) {
             MessageBoxInfo("DNS", "invaild json");
@@ -103,19 +104,20 @@ DialogManageRoutes::DialogManageRoutes(QWidget *parent) : QDialog(parent), ui(ne
             ui->dns_object->setPlainText(QJsonObject2QString(obj, false));
         }
     });
-    ui->sniffing_mode->setCurrentIndex(NekoGui::dataStore->routing->sniffing_mode);
-    ui->outbound_domain_strategy->setCurrentText(NekoGui::dataStore->routing->outbound_domain_strategy);
-    ui->domainStrategyCombo->setCurrentText(NekoGui::dataStore->routing->domain_strategy);
-    ui->use_dns_object->setChecked(NekoGui::dataStore->routing->use_dns_object);
-    ui->dns_object->setPlainText(NekoGui::dataStore->routing->dns_object);
-    ui->remote_dns->setCurrentText(NekoGui::dataStore->routing->remote_dns);
-    ui->remote_dns_strategy->setCurrentText(NekoGui::dataStore->routing->remote_dns_strategy);
-    ui->direct_dns->setCurrentText(NekoGui::dataStore->routing->direct_dns);
-    ui->direct_dns_strategy->setCurrentText(NekoGui::dataStore->routing->direct_dns_strategy);
-    ui->dns_final_out->setCurrentText(NekoGui::dataStore->routing->dns_final_out);
+    ui->sniffing_mode->setCurrentIndex(Configs::dataManager->settingsRepo->sniffing_mode);
+    ui->ruleset_mirror->setCurrentIndex(Configs::dataManager->settingsRepo->ruleset_mirror);
+    ui->default_domain_strategy->setCurrentText(Configs::dataManager->settingsRepo->default_domain_strategy);
+    ui->domainStrategyCombo->setCurrentText(Configs::dataManager->settingsRepo->resolve_domain_strategy);
+    ui->use_dns_object->setChecked(Configs::dataManager->settingsRepo->use_dns_object);
+    ui->dns_object->setPlainText(Configs::dataManager->settingsRepo->dns_object);
+    ui->remote_dns->setCurrentText(Configs::dataManager->settingsRepo->remote_dns);
+    ui->remote_dns_strategy->setCurrentText(Configs::dataManager->settingsRepo->remote_dns_strategy);
+    ui->direct_dns->setCurrentText(Configs::dataManager->settingsRepo->direct_dns);
+    ui->direct_dns_strategy->setCurrentText(Configs::dataManager->settingsRepo->direct_dns_strategy);
+    ui->dns_final_out->setCurrentText(Configs::dataManager->settingsRepo->dns_final_out);
     reloadProfileItems();
 
-    connect(ui->route_profiles, &QListWidget::itemDoubleClicked, this, [=](const QListWidgetItem* item){
+    connect(ui->route_profiles, &QListWidget::itemDoubleClicked, this, [=,this](const QListWidgetItem* item){
         on_edit_route_clicked();
     });
 
@@ -123,54 +125,83 @@ DialogManageRoutes::DialogManageRoutes(QWidget *parent) : QDialog(parent), ui(ne
 
     deleteShortcut = new QShortcut(QKeySequence(Qt::Key_Delete), this);
 
-    connect(deleteShortcut, &QShortcut::activated, this, [=]{
+    connect(deleteShortcut, &QShortcut::activated, this, [=,this]{
         on_delete_route_clicked();
     });
 
     // hijack
-    ui->dnshijack_enable->setChecked(NekoGui::dataStore->enable_dns_server);
-    set_dns_hijack_enability(NekoGui::dataStore->enable_dns_server);
-    ui->dnshijack_allow_lan->setChecked(NekoGui::dataStore->dns_server_listen_lan);
+    ui->dnshijack_enable->setChecked(Configs::dataManager->settingsRepo->enable_dns_server);
+    set_dns_hijack_enability(Configs::dataManager->settingsRepo->enable_dns_server);
+    ui->dnshijack_allow_lan->setChecked(Configs::dataManager->settingsRepo->dns_server_listen_lan);
     ui->dnshijack_listenport->setValidator(QRegExpValidator_Number);
-    ui->dnshijack_listenport->setText(Int2String(NekoGui::dataStore->dns_server_listen_port));
-    ui->dnshijack_v4resp->setText(NekoGui::dataStore->dns_v4_resp);
-    ui->dnshijack_v6resp->setText(NekoGui::dataStore->dns_v6_resp);
-    connect(ui->dnshijack_what, &QPushButton::clicked, this, [=] {
-        MessageBoxInfo("What is this?", NekoGui::Information::HijackInfo);
+    ui->dnshijack_listenport->setText(Int2String(Configs::dataManager->settingsRepo->dns_server_listen_port));
+    ui->dnshijack_v4resp->setText(Configs::dataManager->settingsRepo->dns_v4_resp);
+    ui->dnshijack_v6resp->setText(Configs::dataManager->settingsRepo->dns_v6_resp);
+    connect(ui->dnshijack_what, &QPushButton::clicked, this, [=,this] {
+        MessageBoxInfo("What is this?", Configs::Information::HijackInfo);
     });
 
-    bool ok;
-    auto geoIpList = NekoGui_rpc::defaultClient->GetGeoList(&ok, NekoGui_rpc::GeoRuleSetType::ip, NekoGui::GetCoreAssetDir("geoip.db"));
-    auto geoSiteList = NekoGui_rpc::defaultClient->GetGeoList(&ok, NekoGui_rpc::GeoRuleSetType::site, NekoGui::GetCoreAssetDir("geosite.db"));
     QStringList ruleItems = {"domain:", "suffix:", "regex:"};
-    for (const auto& geoIP : geoIpList) {
-        ruleItems.append("ruleset:"+geoIP);
-    }
-    for (const auto& geoSite: geoSiteList) {
-        ruleItems.append("ruleset:"+geoSite);
+    for (const auto& item : ruleSetMap) {
+        ruleItems.append("ruleset:" + QString::fromStdString(item.first));
     }
     rule_editor = new AutoCompleteTextEdit("", ruleItems, this);
     ui->hijack_box->layout()->replaceWidget(ui->dnshijack_rules, rule_editor);
-    rule_editor->setPlainText(NekoGui::dataStore->dns_server_rules.join("\n"));
+    rule_editor->setPlainText(Configs::dataManager->settingsRepo->dns_server_rules.join("\n"));
     ui->dnshijack_rules->hide();
 #ifndef Q_OS_LINUX
     ui->dnshijack_listenport->setVisible(false);
     ui->dnshijack_listenport_l->setVisible(false);
 #endif
 
-    ui->redirect_enable->setChecked(NekoGui::dataStore->enable_redirect);
-    ui->redirect_listenaddr->setEnabled(NekoGui::dataStore->enable_redirect);
-    ui->redirect_listenaddr->setText(NekoGui::dataStore->redirect_listen_address);
-    ui->redirect_listenport->setEnabled(NekoGui::dataStore->enable_redirect);
+    ui->redirect_enable->setChecked(Configs::dataManager->settingsRepo->enable_redirect);
+    ui->redirect_listenaddr->setEnabled(Configs::dataManager->settingsRepo->enable_redirect);
+    ui->redirect_listenaddr->setText(Configs::dataManager->settingsRepo->redirect_listen_address);
+    ui->redirect_listenport->setEnabled(Configs::dataManager->settingsRepo->enable_redirect);
     ui->redirect_listenport->setValidator(QRegExpValidator_Number);
-    ui->redirect_listenport->setText(Int2String(NekoGui::dataStore->redirect_listen_port));
+    ui->redirect_listenport->setText(Int2String(Configs::dataManager->settingsRepo->redirect_listen_port));
 
-    connect(ui->dnshijack_enable, &QCheckBox::checkStateChanged, this, [=](bool state) {
+    connect(ui->dnshijack_enable, &QCheckBox::stateChanged, this, [=,this](bool state) {
         set_dns_hijack_enability(state);
     });
-    connect(ui->redirect_enable, &QCheckBox::checkStateChanged, this, [=](bool state) {
+    connect(ui->redirect_enable, &QCheckBox::stateChanged, this, [=,this](bool state) {
         ui->redirect_listenaddr->setEnabled(state);
         ui->redirect_listenport->setEnabled(state);
+    });
+
+    // warp
+    ui->enable_warp->setChecked(Configs::dataManager->settingsRepo->enable_warp);
+    ui->warp_private_key->setText(Configs::dataManager->settingsRepo->warp_private_key);
+    ui->warp_public_key->setText(Configs::dataManager->settingsRepo->warp_public_key);
+    ui->warp_ifc_addrs->setText(Configs::dataManager->settingsRepo->warp_ifc_addrs.join(","));
+    ui->warp_ep->setText(Configs::dataManager->settingsRepo->warp_ep);
+    connect(ui->warp_autogen, &QPushButton::clicked, this, [=,this] {
+        auto originalText = ui->warp_autogen->text();
+        ui->warp_autogen->setText("Getting keypair...");
+        bool ok;
+        auto keyPair = API::defaultClient->GenWgKeyPair(&ok);
+        if (!ok) {
+            runOnUiThread([=] {
+               MessageBoxWarning("Failed to get key pair", keyPair.error->c_str());
+            });
+            ui->warp_autogen->setText(originalText);
+            return;
+        }
+        ui->warp_autogen->setText("Generating config...");
+        QString error;
+        auto conf = Configs_network::genWarpConfig(&error, keyPair.private_key->c_str(), keyPair.public_key->c_str());
+        if (!error.isEmpty()) {
+            runOnUiThread([=] {
+                MessageBoxWarning("Failed to generate warp config", error);
+            });
+            ui->warp_autogen->setText(originalText);
+            return;
+        }
+        ui->warp_private_key->setText(conf->privateKey);
+        ui->warp_public_key->setText(conf->publicKey);
+        ui->warp_ep->setText(conf->endpoint);
+        ui->warp_autogen->setText("Success!");
+        setTimeout([=,this] { ui->warp_autogen->setText(originalText); }, this, 2000);
     });
 
     ADD_ASTERISK(this)
@@ -194,40 +225,49 @@ void DialogManageRoutes::accept() {
         return;
     }
 
-    NekoGui::dataStore->routing->sniffing_mode = ui->sniffing_mode->currentIndex();
-    NekoGui::dataStore->routing->domain_strategy = ui->domainStrategyCombo->currentText();
-    NekoGui::dataStore->routing->outbound_domain_strategy = ui->outbound_domain_strategy->currentText();
-    NekoGui::dataStore->routing->use_dns_object = ui->use_dns_object->isChecked();
-    NekoGui::dataStore->routing->dns_object = ui->dns_object->toPlainText();
-    NekoGui::dataStore->routing->remote_dns = ui->remote_dns->currentText();
-    NekoGui::dataStore->routing->remote_dns_strategy = ui->remote_dns_strategy->currentText();
-    NekoGui::dataStore->routing->direct_dns = ui->direct_dns->currentText();
-    NekoGui::dataStore->routing->direct_dns_strategy = ui->direct_dns_strategy->currentText();
-    NekoGui::dataStore->routing->dns_final_out = ui->dns_final_out->currentText();
-    NekoGui::dataStore->fake_dns = ui->enable_fakeip->isChecked();
+    Configs::dataManager->settingsRepo->sniffing_mode = ui->sniffing_mode->currentIndex();
+    Configs::dataManager->settingsRepo->ruleset_mirror = ui->ruleset_mirror->currentIndex();
+    Configs::dataManager->settingsRepo->resolve_domain_strategy = ui->domainStrategyCombo->currentText();
+    Configs::dataManager->settingsRepo->default_domain_strategy = ui->default_domain_strategy->currentText();
+    Configs::dataManager->settingsRepo->use_dns_object = ui->use_dns_object->isChecked();
+    Configs::dataManager->settingsRepo->dns_object = ui->dns_object->toPlainText();
+    Configs::dataManager->settingsRepo->remote_dns = ui->remote_dns->currentText();
+    Configs::dataManager->settingsRepo->remote_dns_strategy = ui->remote_dns_strategy->currentText();
+    Configs::dataManager->settingsRepo->direct_dns = ui->direct_dns->currentText();
+    Configs::dataManager->settingsRepo->direct_dns_strategy = ui->direct_dns_strategy->currentText();
+    Configs::dataManager->settingsRepo->core_box_underlying_dns = ui->local_override->text().trimmed();
+    Configs::dataManager->settingsRepo->dns_final_out = ui->dns_final_out->currentText();
+    Configs::dataManager->settingsRepo->fake_dns = ui->enable_fakeip->isChecked();
 
-    NekoGui::profileManager->UpdateRouteChains(chainList);
-    NekoGui::dataStore->routing->current_route_id = currentRoute->id;
+    Configs::dataManager->routesRepo->UpdateRouteProfiles(chainList);
+    Configs::dataManager->settingsRepo->current_route_id = currentRoute->id;
 
-    NekoGui::dataStore->enable_dns_server = ui->dnshijack_enable->isChecked();
-    NekoGui::dataStore->dns_server_listen_port = ui->dnshijack_listenport->text().toInt();
-    NekoGui::dataStore->dns_v4_resp = ui->dnshijack_v4resp->text();
-    NekoGui::dataStore->dns_v6_resp = ui->dnshijack_v6resp->text();
+    Configs::dataManager->settingsRepo->enable_dns_server = ui->dnshijack_enable->isChecked();
+    Configs::dataManager->settingsRepo->dns_server_listen_port = ui->dnshijack_listenport->text().toInt();
+    Configs::dataManager->settingsRepo->dns_v4_resp = ui->dnshijack_v4resp->text();
+    Configs::dataManager->settingsRepo->dns_v6_resp = ui->dnshijack_v6resp->text();
     auto rawRules = rule_editor->toPlainText().split("\n");
     QStringList dnsRules;
     for (const auto& rawRule : rawRules) {
         if (rawRule.trimmed().isEmpty()) continue;
         dnsRules.append(rawRule.trimmed());
     }
-    NekoGui::dataStore->dns_server_rules = dnsRules;
+    Configs::dataManager->settingsRepo->dns_server_rules = dnsRules;
 
-    NekoGui::dataStore->dns_server_listen_lan = ui->dnshijack_allow_lan->isChecked();
-    NekoGui::dataStore->enable_redirect = ui->redirect_enable->isChecked();
-    NekoGui::dataStore->redirect_listen_address = ui->redirect_listenaddr->text();
-    NekoGui::dataStore->redirect_listen_port = ui->redirect_listenport->text().toInt();
+    Configs::dataManager->settingsRepo->dns_server_listen_lan = ui->dnshijack_allow_lan->isChecked();
+    Configs::dataManager->settingsRepo->enable_redirect = ui->redirect_enable->isChecked();
+    Configs::dataManager->settingsRepo->redirect_listen_address = ui->redirect_listenaddr->text();
+    Configs::dataManager->settingsRepo->redirect_listen_port = ui->redirect_listenport->text().toInt();
+
+    // warp
+    Configs::dataManager->settingsRepo->enable_warp = ui->enable_warp->isChecked();
+    Configs::dataManager->settingsRepo->warp_ep = ui->warp_ep->text();
+    Configs::dataManager->settingsRepo->warp_ifc_addrs = SplitAndTrim(ui->warp_ifc_addrs->text(), ",", false);
+    Configs::dataManager->settingsRepo->warp_private_key = ui->warp_private_key->text();
+    Configs::dataManager->settingsRepo->warp_public_key = ui->warp_public_key->text();
 
     //
-    QStringList msg{"UpdateDataStore"};
+    QStringList msg{"UpdateConfigs::dataManager->settingsRepo"};
     msg << "RouteChanged";
     MW_dialog_message("", msg.join(","));
 
@@ -235,10 +275,10 @@ void DialogManageRoutes::accept() {
 }
 
 void DialogManageRoutes::on_new_route_clicked() {
-    routeChainWidget = new RouteItem(this, NekoGui::ProfileManager::NewRouteChain());
+    routeChainWidget = new RouteItem(this, Configs::dataManager->routesRepo->NewRouteProfile());
     routeChainWidget->setWindowModality(Qt::ApplicationModal);
     routeChainWidget->show();
-    connect(routeChainWidget, &RouteItem::settingsChanged, this, [=](const std::shared_ptr<NekoGui::RoutingChain>& chain) {
+    connect(routeChainWidget, &RouteItem::settingsChanged, this, [=,this](const std::shared_ptr<Configs::RouteProfile>& chain) {
         chainList << chain;
         reloadProfileItems();
     });
@@ -259,7 +299,7 @@ void DialogManageRoutes::on_export_route_clicked()
 
     QToolTip::showText(QCursor::pos(), "Copied!", this);
     int r = ++tooltipID;
-    QTimer::singleShot(1500, [=] {
+    QTimer::singleShot(1500, [=,this] {
         if (tooltipID != r) return;
         QToolTip::hideText();
     });
@@ -269,10 +309,9 @@ void DialogManageRoutes::on_clone_route_clicked() {
     auto idx = ui->route_profiles->currentRow();
     if (idx < 0) return;
 
-    auto chainCopy = std::make_shared<NekoGui::RoutingChain>(*chainList[idx]);
+    auto chainCopy = std::make_shared<Configs::RouteProfile>(*chainList[idx]);
     chainCopy->name = chainCopy->name + " clone";
     chainCopy->id = -1;
-    chainCopy->save_control_no_save = false;
     chainList.append(chainCopy);
     reloadProfileItems();
 }
@@ -284,8 +323,7 @@ void DialogManageRoutes::on_edit_route_clicked() {
     routeChainWidget = new RouteItem(this, chainList[idx]);
     routeChainWidget->setWindowModality(Qt::ApplicationModal);
     routeChainWidget->show();
-    connect(routeChainWidget, &RouteItem::settingsChanged, this, [=](const std::shared_ptr<NekoGui::RoutingChain>& chain) {
-        if (chain->isViewOnly()) return;
+    connect(routeChainWidget, &RouteItem::settingsChanged, this, [=,this](const std::shared_ptr<Configs::RouteProfile>& chain) {
         if (currentRoute == chainList[idx]) currentRoute = chain;
         chainList[idx] = chain;
         reloadProfileItems();
