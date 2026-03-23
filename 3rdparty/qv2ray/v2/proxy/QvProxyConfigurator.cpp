@@ -17,7 +17,8 @@
 #include <QProcess>
 
 #include "3rdparty/qv2ray/wrapper.hpp"
-#include "include/global/Configs.hpp"
+#include "include/configs/proxy/Preset.hpp"
+#include "include/global/NekoGui.hpp"
 
 #define QV_MODULE_NAME "SystemProxy"
 
@@ -270,11 +271,11 @@ namespace Qv2ray::components::proxy {
         __QueryProxyOptions();
 #elif defined(Q_OS_LINUX)
         QList<ProcessArgument> actions;
+        actions << ProcessArgument{"gsettings", {"set", "org.gnome.system.proxy", "mode", "manual"}};
         //
-        bool isKDE = qEnvironmentVariable("XDG_CURRENT_DESKTOP") == "KDE" ||
-                     qEnvironmentVariable("XDG_CURRENT_DESKTOP") == "Trinity";
+        bool isKDE = qEnvironmentVariable("XDG_SESSION_DESKTOP") == "KDE" ||
+                     qEnvironmentVariable("XDG_SESSION_DESKTOP") == "plasma";
         const auto configPath = QStandardPaths::writableLocation(QStandardPaths::ConfigLocation);
-        QString kwriteconfigCmd = qEnvironmentVariable("KDE_SESSION_VERSION") == "5" ? "kwriteconfig5" : qEnvironmentVariable("KDE_SESSION_VERSION") == "6" ? "kwriteconfig6" : "kwriteconfig";
 
         //
         // Configure HTTP Proxies for HTTP, FTP and HTTPS
@@ -291,7 +292,7 @@ namespace Qv2ray::components::proxy {
 
                 // for KDE:
                 if (isKDE) {
-                    actions << ProcessArgument{kwriteconfigCmd,
+                    actions << ProcessArgument{"kwriteconfig5",
                                                {"--file", configPath + "/kioslaverc", //
                                                 "--group", "Proxy Settings",          //
                                                 "--key", protocol + "Proxy",          //
@@ -310,7 +311,7 @@ namespace Qv2ray::components::proxy {
 
                 // for KDE:
                 if (isKDE) {
-                    actions << ProcessArgument{kwriteconfigCmd,
+                    actions << ProcessArgument{"kwriteconfig5",
                                                {"--file", configPath + "/kioslaverc", //
                                                 "--group", "Proxy Settings",          //
                                                 "--key", "socksProxy",                //
@@ -327,7 +328,7 @@ namespace Qv2ray::components::proxy {
 
             // for KDE:
             if (isKDE) {
-                actions << ProcessArgument{kwriteconfigCmd,
+                actions << ProcessArgument{"kwriteconfig5",
                                            {"--file", configPath + "/kioslaverc", //
                                             "--group", "Proxy Settings",          //
                                             "--key", "ProxyType", "1"}};
@@ -387,8 +388,8 @@ namespace Qv2ray::components::proxy {
         }
 #elif defined(Q_OS_LINUX)
         QList<ProcessArgument> actions;
-        const bool isKDE = qEnvironmentVariable("XDG_CURRENT_DESKTOP") == "KDE" ||
-                           qEnvironmentVariable("XDG_CURRENT_DESKTOP") == "Trinity";
+        const bool isKDE = qEnvironmentVariable("XDG_SESSION_DESKTOP") == "KDE" ||
+                           qEnvironmentVariable("XDG_SESSION_DESKTOP") == "plasma";
         const auto configRoot = QStandardPaths::writableLocation(QStandardPaths::ConfigLocation);
 
         // Setting System Proxy Mode to: None
@@ -400,7 +401,7 @@ namespace Qv2ray::components::proxy {
 
             // for KDE:
             if (isKDE) {
-                actions << ProcessArgument{qEnvironmentVariable("KDE_SESSION_VERSION") == "5" ? "kwriteconfig5" : qEnvironmentVariable("KDE_SESSION_VERSION") == "6" ? "kwriteconfig6" : "kwriteconfig",
+                actions << ProcessArgument{"kwriteconfig5",
                                            {"--file", configRoot + "/kioslaverc", //
                                             "--group", "Proxy Settings",          //
                                             "--key", "ProxyType", "0"}};

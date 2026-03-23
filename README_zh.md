@@ -1,20 +1,17 @@
-# Throne (原先的 Nekoray)
+# Nekoray-new
 
 基于 Qt 的跨平台的桌面 GUI 代理客户端，授权自 [Sing-box](https://github.com/SagerNet/sing-box)
 
-开箱支持 Windows / Linux / MacOS 。对于 Windows 7 / 8 / 8.1，建议用 [nekoray-win7](https://github.com/parhelia512/nekoray-win7)
-
-* 最初开发者 [MatsuriDayo](https://github.com/MaatsuriDayo)，开始名为 nekoray，后来到 v4 时改名为 nekobox。2024.12.12发行4.0.1后宣布停止维护，并于2025.3.17代码库进入存档状态。
-* 开发者 [Mahdi-zarei](https://github.com/Mahdi-zarei/) 在 2024.4.30 开始，因为原开发者的长时间不活动而建立了自己的[分支版](https://github.com/Mahdi-zarei/nekoray/)，从4.0.0开始至4.3.7，对nekoray进行 hotfix 后，2025.7.18 把项目改名为 [Throne](https://github.com/throneproj/throne/)。
+开箱支持 Windows / Linux / MacOS 。对于 Windows 7 / 8 / 8.1，使用 [nekoray-win7](https://github.com/parhelia512/nekoray-win7)
 
 ![image](https://github.com/user-attachments/assets/ebba3f17-01e6-4066-8eaa-b9a35dd35b08)
 
 ### MacOS 发行版说明
 苹果的平台具有非常严格的安全策略，由于 Nekoray 没有签名证书，所以必须使用 `xattr -d com.apple.quarantine /path/to/nekoray.app` 去掉隔离。 此外，为了使内置的提权起效，“终端”应该具有 “Full Disk” 访问权限。 
 
-### Github release  (Portable ZIP)
-[![GitHub All Releases](https://img.shields.io/github/downloads/throneproj/Throne/total?label=downloads-total&logo=github&style=flat-square)](https://github.com/throneproj/Throne/releases)
+### GitHub 发行版 (Portable ZIP)
 
+[![GitHub All Releases](https://img.shields.io/github/downloads/Mahdi-zarei/nekoray/total?label=downloads-total&logo=github&style=flat-square)](https://github.com/Mahdi-zarei/nekoray/releases)
 
 ## 支持的协议
 
@@ -43,7 +40,7 @@
 - [SagerNet/sing-box](https://github.com/SagerNet/sing-box)
 - [Qv2ray](https://github.com/Qv2ray/Qv2ray)
 - [Qt](https://www.qt.io/)
-- [simple-protobuf](https://github.com/tonda-kriz/simple-protobuf)
+- [protobuf](https://github.com/protocolbuffers/protobuf)
 - [fkYAML](https://github.com/fktn-k/fkYAML)
 - [quirc](https://github.com/dlbeer/quirc)
 - [QHotkey](https://github.com/Skycoder42/QHotkey)

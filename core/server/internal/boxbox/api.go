@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-func (s *Box) CloseWithTimeout(cancal context.CancelFunc, d time.Duration, logFunc func(v ...any), block bool) {
+func (s *Box) CloseWithTimeout(cancal context.CancelFunc, d time.Duration, logFunc func(v ...any)) {
 	start := time.Now()
 	t := time.NewTimer(d)
 	done := make(chan struct{})
@@ -27,13 +27,7 @@ func (s *Box) CloseWithTimeout(cancal context.CancelFunc, d time.Duration, logFu
 
 	select {
 	case <-t.C:
-		logFunc("[Warning] sing-box close takes longer than expected")
-		if block {
-			select {
-			case <-done:
-				printCloseTime()
-			}
-		}
+		logFunc("[Warning] sing-box close takes longer than expected.")
 	case <-done:
 		printCloseTime()
 	}

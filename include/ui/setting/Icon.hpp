@@ -10,8 +10,10 @@ namespace Icon {
         SYSTEM_PROXY,
         VPN,
         DNS,
-        SYSTEM_PROXY_DNS,
     };
 
     QPixmap GetTrayIcon(TrayIconStatus status);
+
+    QPixmap GetMaterialIcon(const QString &name);
+
 } // namespace Icon

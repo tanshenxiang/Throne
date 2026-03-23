@@ -1,6 +1,10 @@
 #include "include/ui/profile/edit_custom.h"
 
 #include "3rdparty/qv2ray/v2/ui/widgets/editors/w_JsonEditor.hpp"
+#include "include/configs/proxy/CustomBean.hpp"
+#include "include/configs/proxy/Preset.hpp"
+#include "include/configs/ConfigBuilder.hpp"
+#include "include/dataStore/Database.hpp"
 
 #include <QMessageBox>
 #include <QClipboard>
@@ -20,18 +24,18 @@ EditCustom::~EditCustom() {
     delete ui;
 }
 
-void EditCustom::onStart(std::shared_ptr<Configs::Profile> _ent) {
+void EditCustom::onStart(std::shared_ptr<NekoGui::ProxyEntity> _ent) {
     this->ent = _ent;
-    auto outbound = this->ent->Custom();
+    auto bean = this->ent->CustomBean();
 
-    if (preset_core == "outbound") {
+    if (preset_core == "internal") {
         preset_command = preset_config = "";
         ui->config_simple->setPlaceholderText(
             "{\n"
             "    \"type\": \"socks\",\n"
             "    // ...\n"
             "}");
-    } else if (preset_core == "fullconfig") {
+    } else if (preset_core == "internal-full") {
         preset_command = preset_config = "";
         ui->config_simple->setPlaceholderText(
             "{\n"
@@ -41,16 +45,18 @@ void EditCustom::onStart(std::shared_ptr<Configs::Profile> _ent) {
     }
 
     // load core ui
-    ui->config_simple->setPlainText(outbound->config);
+    ui->config_simple->setPlainText(bean->config_simple);
 
     // custom internal
-    if (preset_core == "outbound") {
-        ui->core_l->setText(tr("Outbound JSON, please read the documentation."));
-    } else {
-        ui->core_l->setText(tr("Please fill the complete config."));
+    if (preset_core == "internal" || preset_core == "internal-full") {
+        if (preset_core == "internal") {
+            ui->core_l->setText(tr("Outbound JSON, please read the documentation."));
+        } else {
+            ui->core_l->setText(tr("Please fill the complete config."));
+        }
+        ui->w_ext1->hide();
+        ui->w_ext2->hide();
     }
-    ui->w_ext1->hide();
-    ui->w_ext2->hide();
 }
 
 bool EditCustom::onEnd() {
@@ -59,10 +65,10 @@ bool EditCustom::onEnd() {
         return false;
     }
 
-    auto outbound = this->ent->Custom();
+    auto bean = this->ent->CustomBean();
 
-    outbound->config = ui->config_simple->toPlainText();
-    outbound->type = preset_core;
+    P_SAVE_STRING_PLAIN(config_simple)
+    bean->core = preset_core;
 
     return true;
 }

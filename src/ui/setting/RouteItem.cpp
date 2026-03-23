@@ -1,7 +1,7 @@
 #include "include/ui/setting/RouteItem.h"
-#include "include/api/RPC.h"
-#include "include/database/ProfilesRepo.h"
-#include "include/global/Configs.hpp"
+#include "include/dataStore/RouteEntity.h"
+#include "include/dataStore/Database.hpp"
+#include "include/api/gRPC.h"
 
 void adjustComboBoxWidth(const QComboBox *comboBox) {
     int maxWidth = 0;
@@ -32,26 +32,31 @@ QString get_outbound_name(int id) {
     // -1 is proxy -2 is direct -3 is block -4 is dns-out
     if (id == -1) return "proxy";
     if (id == -2) return "direct";
-    if (auto profile = Configs::dataManager->profilesRepo->GetProfile(id)) return profile->name;
+    auto profiles = NekoGui::profileManager->profiles;
+    if (profiles.count(id)) return profiles[id]->bean->name;
     return "INVALID OUTBOUND";
 }
 
 QStringList get_all_outbounds() {
-    auto profilesNames = Configs::dataManager->profilesRepo->GetAllProfileNames();
+    QStringList res;
+    auto profiles = NekoGui::profileManager->profiles;
+    for (const auto &item: profiles) {
+        res.append(item.second->bean->DisplayName());
+    }
 
-    return profilesNames;
+    return res;
 }
 
-RouteItem::RouteItem(QWidget *parent, const std::shared_ptr<Configs::RouteProfile>& routeChain)
+RouteItem::RouteItem(QWidget *parent, const std::shared_ptr<NekoGui::RoutingChain>& routeChain)
     : QDialog(parent), ui(new Ui::RouteItem) {
     ui->setupUi(this);
 
     // make a copy
-    chain = std::make_shared<Configs::RouteProfile>(*routeChain);
+    chain = std::make_shared<NekoGui::RoutingChain>(*routeChain);
 
     // add the default rule if empty
-    if (chain->IsEmpty()) {
-        auto routeItem = std::make_shared<Configs::RouteRule>();
+    if (chain->Rules.empty()) {
+        auto routeItem = std::make_shared<NekoGui::RouteRule>();
         routeItem->name = "dns-hijack";
         routeItem->protocol = "dns";
         routeItem->action = "hijack-dns";
@@ -59,14 +64,15 @@ RouteItem::RouteItem(QWidget *parent, const std::shared_ptr<Configs::RouteProfil
     }
 
     // setup rule set helper
-    for (const auto& item : ruleSetMap) {
-        geo_items.append(QString::fromStdString(item.first));
-    }
+    bool ok; // for now we discard this
+    auto geoIpList = NekoGui_rpc::defaultClient->GetGeoList(&ok, NekoGui_rpc::GeoRuleSetType::ip, NekoGui::GetCoreAssetDir("geoip.db"));
+    auto geoSiteList = NekoGui_rpc::defaultClient->GetGeoList(&ok, NekoGui_rpc::GeoRuleSetType::site, NekoGui::GetCoreAssetDir("geosite.db"));
+    geo_items << geoIpList << geoSiteList;
     rule_set_editor = new AutoCompleteTextEdit("", geo_items, this);
     ui->rule_attr_data->layout()->addWidget(rule_set_editor);
     ui->rule_attr_data->adjustSize();
     rule_set_editor->hide();
-    connect(rule_set_editor, &QPlainTextEdit::textChanged, this, [=,this]{
+    connect(rule_set_editor, &QPlainTextEdit::textChanged, this, [=]{
         if (currentIndex == -1) return;
         auto currentVal = rule_set_editor->toPlainText().split('\n');
         chain->Rules[currentIndex]->set_field_value(ui->rule_attr->currentText(), currentVal);
@@ -102,27 +108,28 @@ RouteItem::RouteItem(QWidget *parent, const std::shared_ptr<Configs::RouteProfil
     // init outbound map
     outboundMap[0] = -1;
     outboundMap[1] = -2;
-    for (const auto& item: Configs::dataManager->profilesRepo->GetAllProfileIds()) {
-        outboundMap[outboundMap.size()] = item;
+    for (const auto& item: NekoGui::profileManager->profiles) {
+        outboundMap[outboundMap.size()] = item.second->id;
     }
 
-    // limit
-    ui->rule_attr_selector->setMaxCount(1000);
-
     ui->route_name->setText(chain->name);
-    ui->rule_attr->addItems(Configs::RouteRule::get_attributes());
+    ui->rule_attr->addItems(NekoGui::RouteRule::get_attributes());
     adjustComboBoxWidth(ui->rule_attr);
     ui->rule_attr_text->hide();
     ui->rule_attr_data->setTitle("");
+    ui->rule_attr_box->setEnabled(false);
     ui->rule_preview->setReadOnly(true);
     updateRuleSection();
 
-    ui->def_out->setCurrentText(Configs::outboundIDToString(chain->defaultOutboundID));
+    ui->def_out->setCurrentText(NekoGui::outboundIDToString(chain->defaultOutboundID));
 
     // simple rules setup
-    QStringList ruleItems = {"domain:", "suffix:", "regex:", "keyword:", "ip:", "processName:", "processPath:", "ruleset:"};
-    for (const auto& item : ruleSetMap) {
-        ruleItems.append("ruleset:" + QString::fromStdString(item.first));
+    QStringList ruleItems = {"domain:", "suffix:", "regex:", "keyword:", "ip:", "processName:", "processPath:"};
+    for (const auto& geoIP : geoIpList) {
+        ruleItems.append("ruleset:"+geoIP);
+    }
+    for (const auto& geoSite: geoSiteList) {
+        ruleItems.append("ruleset:"+geoSite);
     }
     simpleDirect = new AutoCompleteTextEdit("", ruleItems, this);
     simpleBlock = new AutoCompleteTextEdit("", ruleItems, this);
@@ -135,21 +142,28 @@ RouteItem::RouteItem(QWidget *parent, const std::shared_ptr<Configs::RouteProfil
     ui->simple_block->hide();
     ui->simple_proxy->hide();
 
-    simpleDirect->setPlainText(chain->GetSimpleRules(Configs::direct));
-    simpleBlock->setPlainText(chain->GetSimpleRules(Configs::block));
-    simpleProxy->setPlainText(chain->GetSimpleRules(Configs::proxy));
+    simpleDirect->setPlainText(chain->GetSimpleRules(NekoGui::direct));
+    simpleBlock->setPlainText(chain->GetSimpleRules(NekoGui::block));
+    simpleProxy->setPlainText(chain->GetSimpleRules(NekoGui::proxy));
 
-    connect(ui->tabWidget->tabBar(), &QTabBar::currentChanged, this, [=,this]()
+    if (chain->isViewOnly())
+    {
+        ui->simple_direct_box->setEnabled(false);
+        ui->simple_block_box->setEnabled(false);
+        ui->simple_proxy_box->setEnabled(false);
+    }
+
+    connect(ui->tabWidget->tabBar(), &QTabBar::currentChanged, this, [=]()
     {
         if (ui->tabWidget->tabBar()->currentIndex() == 1)
         {
             QString res;
-            res += chain->UpdateSimpleRules(simpleDirect->toPlainText(), Configs::direct);
-            res += chain->UpdateSimpleRules(simpleBlock->toPlainText(), Configs::block);
-            res += chain->UpdateSimpleRules(simpleProxy->toPlainText(), Configs::proxy);
+            res += chain->UpdateSimpleRules(simpleDirect->toPlainText(), NekoGui::direct);
+            res += chain->UpdateSimpleRules(simpleBlock->toPlainText(), NekoGui::block);
+            res += chain->UpdateSimpleRules(simpleProxy->toPlainText(), NekoGui::proxy);
             if (!res.isEmpty())
             {
-                runOnUiThread([=,this]
+                runOnUiThread([=]
                 {
                     MessageBoxWarning(tr("Invalid rules"), tr("Some rules could not be added:\n") + res);
                 });
@@ -162,21 +176,21 @@ RouteItem::RouteItem(QWidget *parent, const std::shared_ptr<Configs::RouteProfil
             // reload
             updateRouteItemsView();
             updateRuleSection();
-            simpleDirect->setPlainText(chain->GetSimpleRules(Configs::direct));
-            simpleBlock->setPlainText(chain->GetSimpleRules(Configs::block));
-            simpleProxy->setPlainText(chain->GetSimpleRules(Configs::proxy));
+            simpleDirect->setPlainText(chain->GetSimpleRules(NekoGui::direct));
+            simpleBlock->setPlainText(chain->GetSimpleRules(NekoGui::block));
+            simpleProxy->setPlainText(chain->GetSimpleRules(NekoGui::proxy));
         }
     });
 
-    connect(ui->howtouse_button, &QPushButton::clicked, this, [=,this]()
+    connect(ui->howtouse_button, &QPushButton::clicked, this, [=]()
     {
-        runOnUiThread([=,this]
+        runOnUiThread([=]
         {
-            MessageBoxInfo(tr("Simple rule manual"), Configs::Information::SimpleRuleInfo);
+            MessageBoxInfo(tr("Simple rule manual"), NekoGui::Information::SimpleRuleInfo);
         });
     });
 
-    connect(ui->route_import_json, &QPushButton::clicked, this, [=,this] {
+    connect(ui->route_import_json, &QPushButton::clicked, this, [=] {
         auto w = new QDialog(this);
         w->setWindowTitle("Import JSON Array");
         w->setWindowModality(Qt::ApplicationModal);
@@ -203,16 +217,15 @@ RouteItem::RouteItem(QWidget *parent, const std::shared_ptr<Configs::RouteProfil
         buttons->setStandardButtons(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
         layout->addWidget(buttons, line, 0);
 
-        connect(buttons, &QDialogButtonBox::accepted, w, [=,this]{
+        connect(buttons, &QDialogButtonBox::accepted, w, [=]{
            auto err = new QString;
-           auto parsed = Configs::RouteProfile::parseJsonArray(QString2QJsonArray(tEdit->toPlainText()), err);
+           auto parsed = NekoGui::RoutingChain::parseJsonArray(QString2QJsonArray(tEdit->toPlainText()), err);
            if (!err->isEmpty()) {
                MessageBoxInfo(tr("Invalid JSON Array"), tr("The provided input cannot be parsed to a valid route rule array:\n") + *err);
                return;
            }
-           chain->ResetRules();
+           chain->Rules.clear();
            chain->Rules << parsed;
-           currentIndex = -1;
            updateRouteItemsView();
            updateRuleSection();
 
@@ -224,15 +237,13 @@ RouteItem::RouteItem(QWidget *parent, const std::shared_ptr<Configs::RouteProfil
         w->deleteLater();
     });
 
-    connect(ui->rule_name, &QLineEdit::textChanged, this, [=,this](const QString& text) {
+    connect(ui->rule_name, &QLineEdit::textChanged, this, [=](const QString& text) {
         if (currentIndex == -1) return;
         chain->Rules[currentIndex]->name = QString(text);
-        auto ruleNameCursorPosition = ui->rule_name->cursorPosition();
-        updateRouteItemsView(); 
-        ui->rule_name->setCursorPosition(ruleNameCursorPosition);
+        updateRouteItemsView();
     });
 
-    connect(ui->rule_attr_selector, &QComboBox::currentTextChanged, this, [=,this](const QString& text){
+    connect(ui->rule_attr_selector, &QComboBox::currentTextChanged, this, [=](const QString& text){
        if (currentIndex == -1) return;
        if (ui->rule_attr->currentText() == "outbound")
        {
@@ -244,35 +255,46 @@ RouteItem::RouteItem(QWidget *parent, const std::shared_ptr<Configs::RouteProfil
        updateRulePreview();
     });
 
-    connect(ui->rule_attr_text, &QPlainTextEdit::textChanged, this, [=,this] {
+    connect(ui->rule_attr_text, &QPlainTextEdit::textChanged, this, [=] {
         if (currentIndex == -1) return;
         auto currentVal = ui->rule_attr_text->toPlainText().split('\n');
         chain->Rules[currentIndex]->set_field_value(ui->rule_attr->currentText(), currentVal);
         updateRulePreview();
     });
 
-    connect(ui->route_items, &QListWidget::currentRowChanged, this, [=,this](const int idx) {
+    connect(ui->route_items, &QListWidget::currentRowChanged, this, [=](const int idx) {
         if (idx == -1) return;
         currentIndex = idx;
         updateRuleSection();
     });
 
-    connect(ui->rule_attr, &QComboBox::currentTextChanged, this, [=,this](const QString& text){
+    connect(ui->rule_attr, &QComboBox::currentTextChanged, this, [=](const QString& text){
         updateRuleSection();
     });
 
-    connect(ui->buttonBox, &QDialogButtonBox::accepted, this, [=,this]{
+    connect(ui->buttonBox, &QDialogButtonBox::accepted, this, [=]{
         accept();
     });
-    connect(ui->buttonBox, &QDialogButtonBox::rejected, this, [=,this]{
+    connect(ui->buttonBox, &QDialogButtonBox::rejected, this, [=]{
        QDialog::reject();
     });
 
     deleteShortcut = new QShortcut(QKeySequence(Qt::Key_Delete), this);
 
-    connect(deleteShortcut, &QShortcut::activated, this, [=,this]{
+    connect(deleteShortcut, &QShortcut::activated, this, [=]{
         on_delete_route_item_clicked();
     });
+
+    if (chain->isViewOnly()) {
+        ui->route_name->setText(chain->name + " (View only)");
+        ui->route_name->setEnabled(false);
+        ui->rule_attr_box->setEnabled(false);
+        ui->new_route_item->setEnabled(false);
+        ui->moveup_route_item->setEnabled(false);
+        ui->movedown_route_item->setEnabled(false);
+        ui->delete_route_item->setEnabled(false);
+        ui->route_import_json->setEnabled(false);
+    }
 
     adjustSize();
 }
@@ -289,10 +311,26 @@ void RouteItem::accept() {
         return;
     }
 
+    QList<std::shared_ptr<NekoGui::RouteRule>> tmpChain;
+    for (const auto& item: chain->Rules) {
+        if (!item->isEmpty()) {
+            tmpChain << item;
+        }
+    }
+    chain->Rules.clear();
+    for (const auto& item: tmpChain) {
+        chain->Rules << item;
+    }
+
+    if (chain->Rules.empty()) {
+        MessageBoxInfo(tr("Empty Route Profile"), tr("No valid rules are in the profile"));
+        return;
+    }
+
     QString res;
-    res += chain->UpdateSimpleRules(simpleDirect->toPlainText(), Configs::direct);
-    res += chain->UpdateSimpleRules(simpleBlock->toPlainText(), Configs::block);
-    res += chain->UpdateSimpleRules(simpleProxy->toPlainText(), Configs::proxy);
+    res += chain->UpdateSimpleRules(simpleDirect->toPlainText(), NekoGui::direct);
+    res += chain->UpdateSimpleRules(simpleBlock->toPlainText(), NekoGui::block);
+    res += chain->UpdateSimpleRules(simpleProxy->toPlainText(), NekoGui::proxy);
     if (!res.isEmpty())
     {
         runOnUiThread([=]
@@ -301,14 +339,7 @@ void RouteItem::accept() {
         });
         return;
     }
-    chain->FilterEmptyRules();
-
-    if (chain->IsEmpty()) {
-        MessageBoxInfo(tr("Empty Route Profile"), tr("No valid rules are in the profile"));
-        return;
-    }
-
-    chain->defaultOutboundID = Configs::stringToOutboundID(ui->def_out->currentText());
+    chain->defaultOutboundID = NekoGui::stringToOutboundID(ui->def_out->currentText());
 
     emit settingsChanged(chain);
 
@@ -317,7 +348,7 @@ void RouteItem::accept() {
 
 void RouteItem::updateRouteItemsView() {
     ui->route_items->clear();
-    if (chain->IsEmpty()) return;
+    if (chain->Rules.empty()) return;
 
     for (const auto& item: chain->Rules) {
         ui->route_items->addItem(item->name);
@@ -331,48 +362,32 @@ void RouteItem::updateRuleSection() {
     auto ruleItem = chain->Rules[currentIndex];
     auto currentAttr = ui->rule_attr->currentText();
     switch (ruleItem->get_input_type(currentAttr)) {
-        case Configs::trufalse: {
-            if (ruleItem->canEditAttr(currentAttr)) {
-                ui->rule_attr_selector->setEnabled(true);
-            } else {
-                ui->rule_attr_selector->setEnabled(false);
-            }
+        case NekoGui::trufalse: {
             QStringList items = {"false", "true"};
             QString currentVal = ruleItem->get_current_value_bool(currentAttr);
             showSelectItem(items, currentVal);
             break;
         }
-        case Configs::select: {
-            if (ruleItem->canEditAttr(currentAttr)) {
-                ui->rule_attr_selector->setEnabled(true);
-            } else {
-                ui->rule_attr_selector->setEnabled(false);
-            }
+        case NekoGui::select: {
             if (currentAttr == "outbound")
             {
                 // due to the need for mapping, we handle this in a different way...
                 showSelectItem(outbounds, get_outbound_name(ruleItem->outboundID));
                 break;
             }
-            auto items = Configs::RouteRule::get_values_for_field(currentAttr);
+            auto items = NekoGui::RouteRule::get_values_for_field(currentAttr);
             auto currentVal = ruleItem->get_current_value_string(currentAttr)[0];
             showSelectItem(items, currentVal);
             break;
         }
-        case Configs::text: {
-            if (ruleItem->canEditAttr(currentAttr)) {
-                rule_set_editor->setEnabled(true);
-                ui->rule_attr_text->setEnabled(true);
-            } else {
-                rule_set_editor->setEnabled(false);
-                ui->rule_attr_text->setEnabled(false);
-            }
+        case NekoGui::text: {
             auto currentItems = ruleItem->get_current_value_string(currentAttr);
             showTextEnterItem(currentItems, currentAttr == "rule_set");
             break;
         }
     }
     ui->rule_name->setText(ruleItem->name);
+    ui->rule_attr_box->setDisabled(chain->isViewOnly());
 
     updateRulePreview();
 }
@@ -386,7 +401,7 @@ void RouteItem::updateRulePreview() {
 void RouteItem::setDefaultRuleData(const QString& currentData) {
     ui->rule_attr->setCurrentText("ip_version");
     ui->rule_attr_data->setTitle("ip_version");
-    showSelectItem(Configs::RouteRule::get_values_for_field("ip_version"), currentData);
+    showSelectItem(NekoGui::RouteRule::get_values_for_field("ip_version"), currentData);
 }
 
 void RouteItem::showSelectItem(const QStringList& items, const QString& currentItem) {
@@ -417,7 +432,8 @@ void RouteItem::showTextEnterItem(const QStringList& items, bool isRuleSet) {
 }
 
 void RouteItem::on_new_route_item_clicked() {
-    auto routeItem = std::make_shared<Configs::RouteRule>();
+    if (chain->isViewOnly()) return;
+    auto routeItem = std::make_shared<NekoGui::RouteRule>();
     routeItem->name = "rule_" + Int2String(++lastNum);
     chain->Rules << routeItem;
     currentIndex = chain->Rules.size() - 1;
@@ -429,6 +445,7 @@ void RouteItem::on_new_route_item_clicked() {
 }
 
 void RouteItem::on_moveup_route_item_clicked() {
+    if (chain->isViewOnly()) return;
     if (currentIndex == -1 || currentIndex == 0) return;
     auto curr = chain->Rules[currentIndex];
     chain->Rules[currentIndex] = chain->Rules[currentIndex-1];
@@ -438,6 +455,7 @@ void RouteItem::on_moveup_route_item_clicked() {
 }
 
 void RouteItem::on_movedown_route_item_clicked() {
+    if (chain->isViewOnly()) return;
     if (currentIndex == -1 || currentIndex == chain->Rules.size() - 1) return;
     auto curr = chain->Rules[currentIndex];
     chain->Rules[currentIndex] = chain->Rules[currentIndex+1];
@@ -447,6 +465,7 @@ void RouteItem::on_movedown_route_item_clicked() {
 }
 
 void RouteItem::on_delete_route_item_clicked() {
+    if (chain->isViewOnly()) return;
     if (currentIndex == -1) return;
     chain->Rules.removeAt(currentIndex);
     if (chain->Rules.empty()) currentIndex = -1;

@@ -1,42 +1,38 @@
 #include "include/ui/group/dialog_edit_group.h"
 
+#include "include/dataStore/Database.hpp"
 #include "include/ui/mainwindow_interface.h"
 
 #include <QClipboard>
 #include <QStringListModel>
 #include <QCompleter>
 
-#include "include/database/GroupsRepo.h"
-#include "include/database/ProfilesRepo.h"
+#define ADJUST_SIZE runOnUiThread([=] { adjustSize(); adjustPosition(mainwindow); }, this);
 
-
-#define ADJUST_SIZE runOnThread([=,this] { adjustSize(); adjustPosition(mainwindow); }, this);
-
-DialogEditGroup::DialogEditGroup(const std::shared_ptr<Configs::Group> &ent, QWidget *parent) : QDialog(parent), ui(new Ui::DialogEditGroup) {
+DialogEditGroup::DialogEditGroup(const std::shared_ptr<NekoGui::Group> &ent, QWidget *parent) : QDialog(parent), ui(new Ui::DialogEditGroup) {
     ui->setupUi(this);
     this->ent = ent;
 
-    connect(ui->type, &QComboBox::currentIndexChanged, this, [=,this](int index) {
+    connect(ui->type, &QComboBox::currentIndexChanged, this, [=](int index) {
         ui->cat_sub->setHidden(index == 0);
         ADJUST_SIZE
     });
 
-    ui->front_proxy->setMaxCount(1000);
-    ui->landing_proxy->setMaxCount(1000);
     ui->name->setText(ent->name);
-    ui->auto_clear_unavailable->setChecked(ent->auto_clear_unavailable);
+    ui->archive->setChecked(ent->archive);
     ui->skip_auto_update->setChecked(ent->skip_auto_update);
     ui->url->setText(ent->url);
     ui->type->setCurrentIndex(ent->url.isEmpty() ? 0 : 1);
     ui->type->currentIndexChanged(ui->type->currentIndex());
+    ui->manually_column_width->setChecked(ent->manually_column_width);
     ui->cat_share->setVisible(false);
-    if (Configs::dataManager->profilesRepo->GetProfile(ent->front_proxy_id) == nullptr) {
+    if (NekoGui::profileManager->GetProfile(ent->front_proxy_id) == nullptr) {
         ent->front_proxy_id = -1;
-        Configs::dataManager->groupsRepo->Save(ent);
+        ent->Save();
     }
-    if (Configs::dataManager->profilesRepo->GetProfile(ent->landing_proxy_id) == nullptr) {
+    if (NekoGui::profileManager->GetProfile(ent->landing_proxy_id) == nullptr) {
         ent->landing_proxy_id = -1;
-        Configs::dataManager->groupsRepo->Save(ent);
+        ent->Save();
     }
     CACHE.front_proxy = ent->front_proxy_id;
     LANDING.landing_proxy = ent->landing_proxy_id;
@@ -59,7 +55,7 @@ DialogEditGroup::DialogEditGroup(const std::shared_ptr<Configs::Group> &ent, QWi
     frontCompleter->setFilterMode(Qt::MatchContains);
     ui->front_proxy->setCompleter(nullptr);
     ui->front_proxy->lineEdit()->setCompleter(frontCompleter);
-    connect(ui->front_proxy, &QComboBox::currentTextChanged, this, [=,this](const QString &txt){
+    connect(ui->front_proxy, &QComboBox::currentTextChanged, this, [=](const QString &txt){
         CACHE.front_proxy = get_proxy_id(txt);
     });
 
@@ -73,24 +69,24 @@ DialogEditGroup::DialogEditGroup(const std::shared_ptr<Configs::Group> &ent, QWi
     landingCompleter->setFilterMode(Qt::MatchContains);
     ui->landing_proxy->setCompleter(nullptr);
     ui->landing_proxy->lineEdit()->setCompleter(frontCompleter);
-    connect(ui->landing_proxy, &QComboBox::currentTextChanged, this, [=,this](const QString &txt){
+    connect(ui->landing_proxy, &QComboBox::currentTextChanged, this, [=](const QString &txt){
         LANDING.landing_proxy = get_proxy_id(txt);
     });
 
-    connect(ui->copy_links, &QPushButton::clicked, this, [=,this] {
+    connect(ui->copy_links, &QPushButton::clicked, this, [=] {
         QStringList links;
-        auto profiles = Configs::dataManager->profilesRepo->GetProfileBatch(ent->Profiles());
-        for (const auto &profile: profiles) {
-            links += profile->outbound->ExportToLink();
+        for (const auto &[_, profile]: NekoGui::profileManager->profiles) {
+            if (profile->gid != ent->id) continue;
+            links += profile->bean->ToShareLink();
         }
         QApplication::clipboard()->setText(links.join("\n"));
         MessageBoxInfo(software_name, tr("Copied"));
     });
-    connect(ui->copy_links_nkr, &QPushButton::clicked, this, [=,this] {
+    connect(ui->copy_links_nkr, &QPushButton::clicked, this, [=] {
         QStringList links;
-        auto profiles = Configs::dataManager->profilesRepo->GetProfileBatch(ent->Profiles());
-        for (const auto &profile: profiles) {
-            links += profile->outbound->ExportJsonLink();
+        for (const auto &[_, profile]: NekoGui::profileManager->profiles) {
+            if (profile->gid != ent->id) continue;
+            links += profile->bean->ToNekorayShareLink(profile->type);
         }
         QApplication::clipboard()->setText(links.join("\n"));
         MessageBoxInfo(software_name, tr("Copied"));
@@ -113,27 +109,35 @@ void DialogEditGroup::accept() {
         }
     }
     ent->name = ui->name->text();
-    ent->auto_clear_unavailable = ui->auto_clear_unavailable->isChecked();
     ent->url = ui->url->text();
+    ent->archive = ui->archive->isChecked();
     ent->skip_auto_update = ui->skip_auto_update->isChecked();
+    ent->manually_column_width = ui->manually_column_width->isChecked();
     ent->front_proxy_id = CACHE.front_proxy;
     ent->landing_proxy_id = LANDING.landing_proxy;
     QDialog::accept();
 }
 
 QStringList DialogEditGroup::load_proxy_items() {
-    return Configs::dataManager->profilesRepo->GetAllProfileNames();
+    QStringList res = QStringList();
+    auto profiles = NekoGui::profileManager->profiles;
+    for (const auto &item: profiles) {
+        res.push_back(item.second->bean->DisplayName());
+    }
+
+    return res;
 }
 
 int DialogEditGroup::get_proxy_id(QString name) {
-    if (auto profile = Configs::dataManager->profilesRepo->GetProfileByName(name)) return profile->id;
+    auto profiles = NekoGui::profileManager->profiles;
+    for (const auto &item: profiles) {
+        if (item.second->bean->DisplayName() == name) return item.first;
+    }
 
     return -1;
 }
 
 QString DialogEditGroup::get_proxy_name(int id) {
-    if (auto profile = Configs::dataManager->profilesRepo->GetProfile(id)) {
-        return profile->name;
-    }
-    return "None";
+    auto profiles = NekoGui::profileManager->profiles;
+    return profiles.count(id) == 0 ? "None" : profiles[id]->bean->DisplayName();
 }

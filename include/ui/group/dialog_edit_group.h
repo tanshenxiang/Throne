@@ -1,8 +1,8 @@
 #pragma once
 
 #include <QDialog>
+#include "include/dataStore/Group.hpp"
 #include "ui_dialog_edit_group.h"
-#include "include/database/entities/Group.h"
 
 QT_BEGIN_NAMESPACE
 namespace Ui {
@@ -14,14 +14,14 @@ class DialogEditGroup : public QDialog {
     Q_OBJECT
 
 public:
-    explicit DialogEditGroup(const std::shared_ptr<Configs::Group> &ent, QWidget *parent = nullptr);
+    explicit DialogEditGroup(const std::shared_ptr<NekoGui::Group> &ent, QWidget *parent = nullptr);
 
     ~DialogEditGroup() override;
 
 private:
     Ui::DialogEditGroup *ui;
 
-    std::shared_ptr<Configs::Group> ent;
+    std::shared_ptr<NekoGui::Group> ent;
 
     struct {
         int front_proxy;

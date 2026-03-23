@@ -2,8 +2,8 @@
 
 #include <QFileDialog>
 
-
-
+#include "include/configs/proxy/ExtraCore.h"
+#include "include/configs/proxy/Preset.hpp"
 #include "include/ui/profile/dialog_edit_profile.h"
 
 EditExtraCore::EditExtraCore(QWidget *parent) : QWidget(parent),
@@ -15,19 +15,19 @@ EditExtraCore::~EditExtraCore() {
     delete ui;
 }
 
-void EditExtraCore::onStart(std::shared_ptr<Configs::Profile> _ent) {
+void EditExtraCore::onStart(std::shared_ptr<NekoGui::ProxyEntity> _ent) {
     this->ent = _ent;
 
-    auto outbound = ent->ExtraCore();
-    ui->socks_address->setText(outbound->socksAddress);
+    auto bean = ent->ExtraCoreBean();
+    ui->socks_address->setText(bean->socksAddress);
     ui->socks_port->setValidator(new QIntValidator(1, 65534));
-    ui->socks_port->setText(Int2String(outbound->socksPort));
-    ui->config->setPlainText(outbound->extraCoreConf);
-    ui->args->setText(outbound->extraCoreArgs);
-    ui->path_combo->addItems(Configs::dataManager->settingsRepo->GetExtraCorePaths());
-    ui->path_combo->setCurrentText(outbound->extraCorePath);
+    ui->socks_port->setText(Int2String(bean->socksPort));
+    ui->config->setPlainText(bean->extraCoreConf);
+    ui->args->setText(bean->extraCoreArgs);
+    ui->path_combo->addItems(NekoGui::profileManager->GetExtraCorePaths());
+    ui->path_combo->setCurrentText(bean->extraCorePath);
 
-    connect(ui->path_button, &QPushButton::pressed, this, [=,this]
+    connect(ui->path_button, &QPushButton::pressed, this, [=]
     {
         auto f = QFileDialog::getOpenFileName();
         if (f.isEmpty())
@@ -38,7 +38,7 @@ void EditExtraCore::onStart(std::shared_ptr<Configs::Profile> _ent) {
         {
             f = QDir::current().relativeFilePath(f);
         }
-        if (Configs::dataManager->settingsRepo->AddExtraCorePath(f)) ui->path_combo->addItem(f);
+        if (NekoGui::profileManager->AddExtraCorePath(f)) ui->path_combo->addItem(f);
         ui->path_combo->setCurrentText(f);
         ui->path_combo->setSizeAdjustPolicy(QComboBox::AdjustToContents);
         adjustSize();
@@ -46,12 +46,12 @@ void EditExtraCore::onStart(std::shared_ptr<Configs::Profile> _ent) {
 }
 
 bool EditExtraCore::onEnd() {
-    auto outbound = ent->ExtraCore();
-    outbound->socksAddress = ui->socks_address->text();
-    outbound->socksPort = ui->socks_port->text().toInt();
-    outbound->extraCoreConf = ui->config->toPlainText();
-    outbound->extraCorePath = ui->path_combo->currentText();
-    outbound->extraCoreArgs = ui->args->text();
+    auto bean = ent->ExtraCoreBean();
+    bean->socksAddress = ui->socks_address->text();
+    bean->socksPort = ui->socks_port->text().toInt();
+    bean->extraCoreConf = ui->config->toPlainText();
+    bean->extraCorePath = ui->path_combo->currentText();
+    bean->extraCoreArgs = ui->args->text();
 
     return true;
 }

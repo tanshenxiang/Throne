@@ -32,40 +32,10 @@
       <string>Common</string>
      </property>
      <layout class="QGridLayout" name="main">
-      <item row="3" column="1">
-       <widget class="QComboBox" name="landing_proxy">
-        <item>
-         <property name="text">
-          <string notr="true">None</string>
-         </property>
-        </item>
-       </widget>
-      </item>
-      <item row="1" column="1">
-       <widget class="QComboBox" name="type">
-        <item>
-         <property name="text">
-          <string>Basic</string>
-         </property>
-        </item>
-        <item>
-         <property name="text">
-          <string>Subscription</string>
-         </property>
-        </item>
-       </widget>
-      </item>
       <item row="0" column="0">
        <widget class="QLabel" name="label">
         <property name="text">
          <string>Name</string>
-        </property>
-       </widget>
-      </item>
-      <item row="3" column="0">
-       <widget class="QLabel" name="landing_proxy_l">
-        <property name="text">
-         <string>Landing Proxy</string>
         </property>
        </widget>
       </item>
@@ -82,13 +52,6 @@
         </item>
        </layout>
       </item>
-      <item row="1" column="0">
-       <widget class="QLabel" name="label_2">
-        <property name="text">
-         <string>Type</string>
-        </property>
-       </widget>
-      </item>
       <item row="2" column="0">
        <widget class="QLabel" name="front_proxy_l">
         <property name="text">
@@ -96,13 +59,61 @@
         </property>
        </widget>
       </item>
+      <item row="4" column="1">
+       <layout class="QHBoxLayout" name="horizontalLayout_2">
+        <item>
+         <widget class="QCheckBox" name="manually_column_width">
+          <property name="text">
+           <string>Manually column width</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QCheckBox" name="archive">
+          <property name="text">
+           <string>Archive</string>
+          </property>
+         </widget>
+        </item>
+       </layout>
+      </item>
+      <item row="1" column="1">
+       <widget class="QComboBox" name="type">
+        <item>
+         <property name="text">
+          <string>Basic</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>Subscription</string>
+         </property>
+        </item>
+       </widget>
+      </item>
+      <item row="1" column="0">
+       <widget class="QLabel" name="label_2">
+        <property name="text">
+         <string>Type</string>
+        </property>
+       </widget>
+      </item>
       <item row="0" column="1">
        <widget class="QLineEdit" name="name"/>
       </item>
-      <item row="4" column="1">
-       <widget class="QCheckBox" name="auto_clear_unavailable">
+      <item row="3" column="1">
+       <widget class="QComboBox" name="landing_proxy">
+        <item>
+         <property name="text">
+          <string notr="true">None</string>
+         </property>
+        </item>
+       </widget>
+      </item>
+      <item row="3" column="0">
+       <widget class="QLabel" name="landing_proxy_l">
         <property name="text">
-         <string>Auto Clear Unavailable Profiles</string>
+         <string>Landing Proxy</string>
         </property>
        </widget>
       </item>
@@ -114,7 +125,6 @@
      <zorder>landing_proxy</zorder>
      <zorder>landing_proxy_l</zorder>
      <zorder>name</zorder>
-     <zorder>auto_clear_unavailable</zorder>
     </widget>
    </item>
    <item>
@@ -159,7 +169,7 @@
       <item>
        <widget class="QPushButton" name="copy_links_nkr">
         <property name="text">
-         <string>Copy profile share links (Custom Links)</string>
+         <string>Copy profile share links (Neko Links)</string>
         </property>
        </widget>
       </item>
@@ -185,6 +195,8 @@
  <tabstops>
   <tabstop>name</tabstop>
   <tabstop>type</tabstop>
+  <tabstop>manually_column_width</tabstop>
+  <tabstop>archive</tabstop>
   <tabstop>url</tabstop>
   <tabstop>skip_auto_update</tabstop>
   <tabstop>copy_links</tabstop>

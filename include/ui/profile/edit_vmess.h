@@ -18,11 +18,11 @@ public:
 
     ~EditVMess() override;
 
-    void onStart(std::shared_ptr<Configs::Profile> _ent) override;
+    void onStart(std::shared_ptr<NekoGui::ProxyEntity> _ent) override;
 
     bool onEnd() override;
 
 private:
     Ui::EditVMess *ui;
-    std::shared_ptr<Configs::Profile> ent;
+    std::shared_ptr<NekoGui::ProxyEntity> ent;
 };

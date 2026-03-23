@@ -1,12 +1,16 @@
-name: Throne build matrix
+name: Nekoray build matrix - cmake
+
 on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release Tag and version"
+        description: "Release Tag"
         required: true
       publish:
-        description: "r for normal release, p for prerelease, leave empty to not publish anything"
+        description: "Publish: If want ignore"
+        required: false
+      artifact-pack:
+        description: "artifact-pack: If want ignore"
         required: false
 jobs:
   build-go:
@@ -15,33 +19,21 @@ jobs:
     strategy:
       matrix:
         include:
+          - cross_os: public_res
+            cross_arch: public_res
+            go_version: "1.24.4"
           - cross_os: windows
             cross_arch: amd64
-            go_version: "1.25.8"
-          - cross_os: windows
-            cross_arch: arm64
-            go_version: "1.25.8"
+            go_version: "1.24.4"
           - cross_os: linux
             cross_arch: amd64
-            go_version: "1.25.8"
-          - cross_os: linux
-            cross_arch: arm64
-            go_version: "1.25.8"
+            go_version: "1.24.4"
           - cross_os: darwin
             cross_arch: amd64
-            go_version: "1.25.8"
+            go_version: "1.24.4"
           - cross_os: darwin
             cross_arch: arm64
-            go_version: "1.25.8"
-          - cross_os: darwin-legacy
-            cross_arch: amd64
-            go_version: "1.25.8"
-          - cross_os: windowslegacy
-            cross_arch: amd64
-            go_version: "1.25.8"
-          - cross_os: windowslegacy
-            cross_arch: 386
-            go_version: "1.25.8"
+            go_version: "1.24.4"
       fail-fast: false
     runs-on: ubuntu-latest
     steps:
@@ -60,33 +52,21 @@ jobs:
           go-version: ${{ matrix.go_version }}
           cache-dependency-path: |
             core/server/go.sum
-      - name: Install Golang For Legacy OS
-        if: matrix.cross_os == 'windowslegacy' || matrix.cross_os == 'darwin-legacy'
-        run: |
-          curl -L -o go.7z https://github.com/throneproj/env_windows_legacy/releases/download/latest/go.7z
-          7z x go.7z
-      - name: Install Protoc
-        run: |
-          curl -LO "https://github.com/protocolbuffers/protobuf/releases/download/v31.1/protoc-31.1-linux-x86_64.zip"
-          unzip "protoc-31.1-linux-x86_64.zip" -d protoc_install
-          cp ./protoc_install/bin/protoc /usr/local/bin
-          protoc --version
-      - name: Installing protoc-gen-go
-        run: |
-          go install github.com/golang/protobuf/protoc-gen-go@latest
-          go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
+            core/updater/go.sum
       - name: Build golang parts
         if: steps.cache-common.outputs.cache-hit != 'true'
         shell: bash
         run: |
-          GOOS=${{ matrix.cross_os }} GOARCH=${{ matrix.cross_arch }} ./script/build_go.sh
+          [ ${{ matrix.cross_os }} == public_res ] || GOOS=${{ matrix.cross_os }} GOARCH=${{ matrix.cross_arch }} ./script/build_go.sh
+          [ ${{ matrix.cross_os }} == public_res ] || exit 0
+          ./script/build_public_res.sh
       - name: Tar files
         if: steps.cache-common.outputs.cache-hit != 'true'
         run: tar czvf artifacts.tgz ./deployment
       - name: Uploading Artifact
         uses: actions/upload-artifact@v4.6.2
         with:
-          name: Throne-${{ github.sha }}-Common-${{ matrix.cross_os }}-${{ matrix.cross_arch }}
+          name: NekoRay-${{ github.sha }}-Common-${{ matrix.cross_os }}-${{ matrix.cross_arch }}
           path: artifacts.tgz
   build-cpp:
     permissions:
@@ -97,96 +77,48 @@ jobs:
       matrix:
         include:
           - platform: windows-latest
-            qt_version: "6.10.2"
-            target: x86_64
-          - platform: windows-11-arm
-            qt_version: "6.10.2"
-            target: arm64
-          - platform: ubuntu-22.04
-            qt_version: "6.10.2"
+            qt_version: "6.9.1"
             target: amd64
           - platform: ubuntu-22.04
-            qt_version: "6.2.0"
+            qt_version: "6.9.1"
             target: amd64
-          - platform: ubuntu-24.04-arm
-            qt_version: "6.10.2"
+          - platform: macos-latest
+            qt_version: "6.9.1"
+            target: x86_64
+          - platform: macos-latest
+            qt_version: "6.9.1"
             target: arm64
-          - platform: macos-latest
-            qt_version: "6.10.2"
-            target: x86_64
-          - platform: macos-latest
-            qt_version: "6.10.2"
-            target: arm64
-          - platform: macos-latest
-            qt_version: "6.4.3"
-            target: x86_64
-          - platform: windows-latest
-            qt_version: "6.2.12"
-            target: x86_64
-          - platform: windows-latest
-            qt_version: "6.2.12"
-            target: i686
       fail-fast: false
     runs-on: ${{ matrix.platform }}
     env:
       ACTIONS_ALLOW_UNSECURE_COMMANDS: true
-      INPUT_VERSION: ${{ github.event.inputs.tag }}
     steps:
       - name: Checking out sources
         uses: actions/checkout@v4.2.2
         with:
           submodules: "recursive"
-      - name: Install mingw (Legacy windows)
-        if: matrix.platform == 'windows-latest' && matrix.qt_version == '6.2.12'
+      - name: Install mingw
+        if: matrix.platform == 'windows-latest'
         uses: bwoodsend/setup-winlibs-action@v1.15
-        with:
-          architecture: ${{ matrix.target }}
-      - name: Install MSVC compiler
-        if: matrix.platform == 'windows-latest' && matrix.qt_version != '6.2.12'
-        uses: ilammy/msvc-dev-cmd@v1.13.0
-        with:
-          arch: ${{ matrix.target }}
-      - name: Install MSVC compiler (WoA)
-        if: matrix.platform == 'windows-11-arm'
-        uses: ilammy/msvc-dev-cmd@v1
-        with:
-          arch: arm64
+      - name: Install ninja-build tool
+        uses: seanmiddleditch/gha-setup-ninja@v6
+
       - name: Download Artifacts
         uses: actions/download-artifact@v4.3.0
         with:
           path: download-artifact
       # ========================================================================================================= Qt Install
-      - name: Install OpenSSL (Windows Legacy)
-        if: matrix.platform == 'windows-latest' && matrix.qt_version == '6.2.12'
-        shell: bash
-        run: |
-          curl -L -o openssl.7z https://github.com/throneproj/env_windows_legacy/releases/download/latest/openssl-${{ matrix.target }}.7z
-          7z x openssl.7z
-      - name: OpenSSL Cache
-        id: cache-openssl
-        if: matrix.platform == 'windows-latest' && matrix.qt_version != '6.2.12'
-        uses: actions/cache@v4.2.3
-        with:
-          path: C:/vcpkg/installed/x64-windows-static
-          key: OpenSSLCache-${{ matrix.platform }}-${{ matrix.target }}
-      - name: Install OpenSSL (Windows)
-        if: matrix.platform == 'windows-latest' && steps.cache-openssl.outputs.cache-hit != 'true' && matrix.qt_version != '6.2.12'
-        shell: powershell
-        run: |
-          echo "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" | Out-File -FilePath $env:GITHUB_ENV -Append
-          vcpkg install openssl:x64-windows-static
       - name: Qt static Cache
         id: cache-static-Qt
-        if: matrix.platform == 'windows-latest' && matrix.qt_version != '6.2.12'
+        if: matrix.platform == 'windows-latest'
         uses: actions/cache@v4.2.3
         with:
           path: qt6/build
-          key: QtStaticCache-${{ matrix.platform }}-${{ matrix.target }}-Qt${{ matrix.qt_version }}-${{ hashFiles('script/build_qt_static_windows.bat') }}
+          key: QtStaticCache-${{ matrix.platform }}-${{ matrix.target }}-Qt${{ matrix.qt_version }}
       - name: Install Qt Windows
-        shell: cmd
-        if: matrix.platform == 'windows-latest' && steps.cache-static-Qt.outputs.cache-hit != 'true' && matrix.qt_version != '6.2.12'
-        run: |
-          ./script/build_qt_static_windows.bat ${{ matrix.qt_version }}
+        shell: powershell
+        if: matrix.platform == 'windows-latest' && steps.cache-static-Qt.outputs.cache-hit != 'true'
+        run: ./script/build_qt_static_windows.bat ${{ matrix.qt_version }}
       - name: Install Qt
         uses: jurplel/install-qt-action@v4.3.0
         if: matrix.platform != 'windows-latest'
@@ -195,99 +127,60 @@ jobs:
           setup-python: true
           cache: true
           cache-key-prefix: QtCache-${{ matrix.platform }}-${{ matrix.target }}
+      # ========================================================================================================= Build deps
+      - name: Cache Download
+        id: cache-deps
+        uses: actions/cache@v4.2.3
+        with:
+          path: libs/deps
+          key: DepsCache-${{ matrix.platform }}-${{ matrix.target }}-${{ hashFiles('script/build_deps_*.sh') }}-Qt${{ matrix.qt_version }}
+      - name: Build Dependencies
+        shell: bash
+        if: steps.cache-deps.outputs.cache-hit != 'true'
+        run: ./script/build_deps_all.sh ${{ matrix.target }}
       # ========================================================================================================= Generate MakeFile and Build
       - name: Windows - Generate MakeFile and Build
         shell: bash
-        if: matrix.platform == 'windows-latest' && matrix.qt_version != '6.2.12'
+        if: matrix.platform == 'windows-latest'
+        env:
+          CC: gcc.exe
+          CXX: g++.exe
         run: |
           export CMAKE_PREFIX_PATH=$PWD/qt6/build/lib/cmake
-          export OPENSSL_ROOT_DIR="C:/vcpkg/installed/x64-windows-static"
           mkdir build
           cd build
-          curl -fLso srslist.h "https://raw.githubusercontent.com/throneproj/routeprofiles/rule-set/srslist.h"
-          cmake -GNinja -DCMAKE_BUILD_TYPE=RelWithDebInfo ..
-          ninja
+          cmake -GNinja -DQT_VERSION_MAJOR=6 -DCMAKE_CXX_FLAGS="-static -DNDEBUG -s" ..
+          ninja -j2
           cd ..
-          ./script/deploy_windows.sh
-      - name: Legacy Windows - Generate MakeFile and Build
-        shell: bash
-        if: matrix.platform == 'windows-latest' && matrix.qt_version == '6.2.12'
-        run: |
-          curl -L -o qt.7z https://github.com/throneproj/env_windows_legacy/releases/download/latest/qt-${{ matrix.target }}.7z
-          7z x qt.7z
-          export CMAKE_PREFIX_PATH=$PWD/Qt/lib/cmake
-          export OPENSSL_ROOT_DIR=$PWD/openssl
-          mkdir build
-          cd build
-          curl -fLso srslist.h "https://raw.githubusercontent.com/throneproj/routeprofiles/rule-set/srslist.h"
-          cmake -GNinja -DCMAKE_BUILD_TYPE=Release -DCMAKE_EXE_LINKER_FLAGS="-static -s" ..
-          ninja
-          cd ..
-          ./script/deploy_windows.sh ${{ matrix.target }}
-      - name: WOA - Generate MakeFile and Build
-        shell: bash
-        if: matrix.platform == 'windows-11-arm'
-        run: |
-          mkdir build
-          cd build
-          curl -fLso srslist.h "https://raw.githubusercontent.com/throneproj/routeprofiles/rule-set/srslist.h"
-          cmake -GNinja -DCMAKE_BUILD_TYPE=Release ..
-          ninja
-          cd ..
-          ./script/deploy_woa.sh
+          ./script/deploy_windows64.sh
       - name: Build Installer with NSIS
         shell: cmd
-        if: matrix.platform == 'windows-latest' && matrix.qt_version != '6.2.12'
+        if: matrix.platform == 'windows-latest'
         run: |
-          choco install nsis
           cp .\script\windows_installer.nsi .
-          "C:\Program Files (x86)\NSIS\makensis.exe" windows_installer.nsi
-          cp ThroneSetup.exe deployment/
+          makensis windows_installer.nsi
+          cp NekoraySetup.exe deployment/
       - name: Linux - Generate MakeFile and Build
         shell: bash
-        if: contains( matrix.platform, 'ubuntu' ) && matrix.qt_version != '6.2.0'
+        if: matrix.platform == 'ubuntu-22.04'
         run: |
           sudo apt update && sudo apt upgrade -y
           mkdir build
           cd build
-          curl -fLso srslist.h "https://raw.githubusercontent.com/throneproj/routeprofiles/rule-set/srslist.h"
-          cmake -GNinja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_EXE_LINKER_FLAGS="-static-libgcc -static-libstdc++" ..
+          cmake -GNinja -DQT_VERSION_MAJOR=6  -DCMAKE_BUILD_TYPE=Release ..
           ninja
           cd ..
           ./script/deploy_linux64.sh
-      - name: Linux Using System Qt - Generate MakeFile and Build
-        shell: bash
-        if: contains( matrix.platform, 'ubuntu' ) && matrix.qt_version == '6.2.0'
-        run: |
-          mkdir build
-          cd build
-          curl -fLso srslist.h "https://raw.githubusercontent.com/throneproj/routeprofiles/rule-set/srslist.h"
-          cmake -GNinja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_EXE_LINKER_FLAGS="-static-libgcc" ..
-          ninja
-          cd ..
-          ./script/deploy_linux64_system_qt.sh
       - name: macOS - Generate MakeFile and Build
         shell: bash
-        if: matrix.platform == 'macos-latest' && matrix.qt_version != '6.4.3'
+        if: matrix.platform == 'macos-latest'
         run: |
           mkdir build
           cd build
-          curl -fLso srslist.h "https://raw.githubusercontent.com/throneproj/routeprofiles/rule-set/srslist.h"
-          cmake -GNinja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DNKR_PACKAGE_MACOS=1 -DCMAKE_OSX_DEPLOYMENT_TARGET=10.15 -DCMAKE_OSX_ARCHITECTURES=${{ matrix.target }} ..
+          cmake -GNinja -DQT_VERSION_MAJOR=6 -DCMAKE_BUILD_TYPE=Release -DNKR_PACKAGE_MACOS=1 -DCMAKE_OSX_DEPLOYMENT_TARGET=10.15 -DCMAKE_OSX_ARCHITECTURES=${{ matrix.target }} ..
           ninja
           cd ..
           ./script/deploy_macos.sh ${{ matrix.target }}
-      - name: Legacy macOS - Generate MakeFile and Build
-        shell: bash
-        if: matrix.platform == 'macos-latest' && matrix.qt_version == '6.4.3'
-        run: |
-          mkdir build
-          cd build
-          curl -fLso srslist.h "https://raw.githubusercontent.com/throneproj/routeprofiles/rule-set/srslist.h"
-          cmake -GNinja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DNKR_PACKAGE_MACOS=1 -DCMAKE_OSX_DEPLOYMENT_TARGET=10.15 -DCMAKE_OSX_ARCHITECTURES=${{ matrix.target }} ..
-          ninja
-          cd ..
-          ./script/deploy_macos.sh
       # ========================================================================================================= Deployments
       - name: Tar files
         shell: bash
@@ -295,18 +188,17 @@ jobs:
       - name: Uploading Artifact
         uses: actions/upload-artifact@v4.6.2
         with:
-          name: Throne-${{ github.sha }}-${{ matrix.platform }}-${{ matrix.target }}-Qt${{ matrix.qt_version }}
+          name: NekoRay-${{ github.sha }}-${{ matrix.platform }}-${{ matrix.target }}-Qt${{ matrix.qt_version }}
           path: artifacts.tgz
   publish:
     name: Pack & Publish Release
+    if: github.event.inputs.artifact-pack != 'y'
     runs-on: ubuntu-latest
     needs:
       - build-cpp
     permissions:
       contents: write
       actions: read
-    env:
-      INPUT_VERSION: ${{ github.event.inputs.tag }}
     steps:
       - name: Checking out sources
         uses: actions/checkout@v4.2.2
@@ -316,91 +208,48 @@ jobs:
           path: download-artifact
       - name: Pack
         run: |
-          curl -Lo - https://github.com/tcnksm/ghr/releases/download/v0.17.0/ghr_v0.17.0_linux_amd64.tar.gz | tar xzv
+          curl -Lo - https://github.com/tcnksm/ghr/releases/download/v0.16.2/ghr_v0.16.2_linux_amd64.tar.gz | tar xzv
           mv ghr*linux_amd64/ghr .
           source script/env_deploy.sh
           find . -name artifacts.tgz | xargs -n1 tar xvzf
           cd deployment
-          mkdir debug
+          rm -rf *.pdb
           ####
           bash ../script/pack_debian.sh ${{ github.event.inputs.tag }}
-          mv Throne.deb $version_standalone-debian-x64.deb
-          rm -rf Throne
+          mv nekoray.deb $version_standalone-debian-x64.deb
+          rm -rf nekoray
           ####
-          bash ../script/pack_debian_system_qt.sh ${{ github.event.inputs.tag }}
-          mv Throne.deb $version_standalone-debian-system-qt-x64.deb
-          rm -rf Throne
+          mv linux64 nekoray
+          zip -9 -r $version_standalone-linux64.zip nekoray
+          rm -rf nekoray
           ####
-          mv linux-amd64 Throne
-          mv Throne/Throne.debug debug/$version_standalone-linux-amd64.debug
-          zip -9 -r $version_standalone-linux-amd64.zip Throne
-          rm -rf Throne
+          mv NekoraySetup.exe $version_standalone-windows64-installer.exe
+          mv windows64 nekoray
+          zip -9 -r $version_standalone-windows64.zip nekoray
+          rm -rf nekoray
           ####
-          mv linux-arm64 Throne
-          mv Throne/Throne.debug debug/$version_standalone-linux-arm64.debug
-          zip -9 -r $version_standalone-linux-arm64.zip Throne
-          rm -rf Throne
-          ####
-          mv ThroneSetup.exe $version_standalone-windows64-installer.exe
-          mv windows64 Throne
-          mv Throne/Throne.pdb debug/$version_standalone-windows64.pdb
-          zip -9 -r $version_standalone-windows64.zip Throne
-          rm -rf Throne
-          ####
-          mv windows32 Throne
-          zip -9 -r $version_standalone-windows32.zip Throne
-          rm -rf Throne
-          ####
-          mv windowslegacy64 Throne
-          zip -9 -r $version_standalone-windowslegacy64.zip Throne
-          rm -rf Throne
-          ####
-          mv windows-arm64 Throne
-          zip -9 -r $version_standalone-windows-arm64.zip Throne
-          rm -rf Throne
-          ####
-          mkdir Throne
-          mv macos-arm64/Throne.app Throne/Throne.app
-          mv Throne/Throne.app/Contents/MacOS/Throne.dSYM debug/$version_standalone-macos-arm64.dSYM
-          zip -9 --symlinks -r $version_standalone-macos-arm64.zip Throne
+          mkdir Nekoray
+          mv macos-arm64/nekoray.app Nekoray/nekoray.app
+          zip -9 --symlinks -r $version_standalone-macos-arm64.zip Nekoray
           rm -rf macos-arm64
-          rm -rf Throne
+          rm -rf Nekoray
           ####
-          mkdir Throne
-          mv macos-amd64/Throne.app Throne/Throne.app
-          mv Throne/Throne.app/Contents/MacOS/Throne.dSYM debug/$version_standalone-macos-amd64.dSYM
-          zip -9 --symlinks -r $version_standalone-macos-amd64.zip Throne
+          mkdir Nekoray
+          mv macos-amd64/nekoray.app Nekoray/nekoray.app
+          zip -9 --symlinks -r $version_standalone-macos-amd64.zip Nekoray
           rm -rf macos-amd64
-          rm -rf Throne
-          ####
-          mkdir Throne
-          mv macos-legacy-amd64/Throne.app Throne/Throne.app
-          mv Throne/Throne.app/Contents/MacOS/Throne.dSYM debug/$version_standalone-macoslegacy-amd64.dSYM
-          zip -9 --symlinks -r $version_standalone-macoslegacy-amd64.zip Throne
-          rm -rf macos-legacy-amd64
-          rm -rf Throne
-          ####
-          zip -9 -r debug-symbols.zip debug
-      - name: Uploading Debug Artifact
-        uses: actions/upload-artifact@v4.6.2
-        with:
-          name: Debug-${{ github.sha }}
-          path: deployment/debug-symbols.zip
+          rm -rf Nekoray
       - name: Clean Up
         run: |
           cd deployment
           rm -rf windows-arm64
           rm -rf linux-arm64
-          rm -rf linux-amd64
+          rm -rf linux64
           rm -rf windows64
-          rm -rf windows32
-          rm -rf windowslegacy64
           rm -rf macos-amd64
           rm -rf macos-arm64
-          rm -rf macos-legacy-amd64
-          rm -rf linux-system-qt-amd64
+          rm -rf public_res
           rm -rf *.pdb
-          rm -rf debug*
       - name: Uploading Artifact
         uses: actions/upload-artifact@v4.6.2
         with:
@@ -409,8 +258,8 @@ jobs:
       - name: PreRelease
         if: github.event.inputs.publish == 'p'
         run: |
-          ./ghr -prerelease -delete -c ${{ github.sha }} -t "${{ github.token }}" -n "${{ github.event.inputs.tag }}" "${{ github.event.inputs.tag }}" deployment
+          ./ghr -prerelease -delete -t "${{ github.token }}" -n "${{ github.event.inputs.tag }}" "${{ github.event.inputs.tag }}" deployment
       - name: Release
-        if: github.event.inputs.publish == 'r'
+        if: github.event.inputs.publish == ''
         run: |
-          ./ghr -delete -c ${{ github.sha }} -t "${{ github.token }}" -n "${{ github.event.inputs.tag }}" "${{ github.event.inputs.tag }}" deployment
+          ./ghr -delete -t "${{ github.token }}" -n "${{ github.event.inputs.tag }}" "${{ github.event.inputs.tag }}" deployment

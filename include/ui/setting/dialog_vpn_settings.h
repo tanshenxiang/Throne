@@ -25,8 +25,6 @@ public slots:
 
     void accept() override;
 
-    void on_restore_default_addresses_clicked();
-
     void on_troubleshooting_clicked();
 };
 

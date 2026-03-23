@@ -1,34 +1,33 @@
 #include "include/ui/profile/edit_vmess.h"
 
+#include "include/configs/proxy/VMessBean.hpp"
+
 #include <QUuid>
 
 EditVMess::EditVMess(QWidget *parent) : QWidget(parent), ui(new Ui::EditVMess) {
     ui->setupUi(this);
-    connect(ui->uuidgen, &QPushButton::clicked, this, [=,this] { ui->uuid->setText(QUuid::createUuid().toString().remove("{").remove("}")); });
-    ui->packet_encoding->addItems(Configs::vPacketEncoding);
+    connect(ui->uuidgen, &QPushButton::clicked, this, [=] { ui->uuid->setText(QUuid::createUuid().toString().remove("{").remove("}")); });
 }
 
 EditVMess::~EditVMess() {
     delete ui;
 }
 
-void EditVMess::onStart(std::shared_ptr<Configs::Profile> _ent) {
+void EditVMess::onStart(std::shared_ptr<NekoGui::ProxyEntity> _ent) {
     this->ent = _ent;
-    auto outbound = this->ent->VMess();
+    auto bean = this->ent->VMessBean();
 
-    ui->uuid->setText(outbound->uuid);
-    ui->aid->setText(Int2String(outbound->alter_id));
-    ui->packet_encoding->setCurrentText(outbound->packet_encoding);
-    ui->security->setCurrentText(outbound->security);
+    ui->uuid->setText(bean->uuid);
+    ui->aid->setText(Int2String(bean->aid));
+    ui->security->setCurrentText(bean->security);
 }
 
 bool EditVMess::onEnd() {
-    auto outbound = this->ent->VMess();
+    auto bean = this->ent->VMessBean();
 
-    outbound->uuid = ui->uuid->text();
-    outbound->alter_id = ui->aid->text().toInt();
-    outbound->packet_encoding = ui->packet_encoding->currentText();
-    outbound->security = ui->security->currentText();
+    bean->uuid = ui->uuid->text();
+    bean->aid = ui->aid->text().toInt();
+    bean->security = ui->security->currentText();
 
     return true;
 }

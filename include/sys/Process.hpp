@@ -4,7 +4,7 @@
 #include <QElapsedTimer>
 #include <QProcess>
 
-namespace Configs_sys {
+namespace NekoGui_sys {
     class CoreProcess : public QProcess
     {
     public:
@@ -35,8 +35,9 @@ namespace Configs_sys {
 
     protected:
         bool started = false;
+        bool killed = false;
         bool crashed = false;
     };
 
     inline QAtomicInt logCounter;
-} // namespace Configs_sys
+} // namespace NekoGui_sys

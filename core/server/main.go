@@ -1,15 +1,13 @@
 package main
 
 import (
-	"ThroneCore/gen"
-	"ThroneCore/internal/boxmain"
-	"ThroneCore/test_utils"
 	"context"
 	"flag"
 	"fmt"
-	"github.com/xtls/xray-core/core"
 	"google.golang.org/grpc"
 	"log"
+	"nekobox_core/gen"
+	"nekobox_core/internal/boxmain"
 	"net"
 	"os"
 	"runtime"
@@ -18,14 +16,14 @@ import (
 	"syscall"
 	"time"
 
-	_ "ThroneCore/internal/distro/all"
 	C "github.com/sagernet/sing-box/constant"
+	_ "nekobox_core/internal/distro/all"
 )
 
 func RunCore() {
 	_port := flag.Int("port", 19810, "")
 	_debug := flag.Bool("debug", false, "")
-	flag.CommandLine.Parse(os.Args[1:])
+	flag.CommandLine.Parse(os.Args[2:])
 	debug = *_debug
 
 	go func() {
@@ -67,15 +65,7 @@ func RunCore() {
 }
 
 func main() {
-	defer func() {
-		if err := recover(); err != nil {
-			fmt.Println("Core panicked:")
-			fmt.Println(err)
-			os.Exit(0)
-		}
-	}()
 	fmt.Println("sing-box:", C.Version)
-	fmt.Println("Xray-core:", core.Version())
 	fmt.Println()
 	runtimeDebug.SetMemoryLimit(2 * 1024 * 1024 * 1024) // 2GB
 	go func() {
@@ -90,7 +80,7 @@ func main() {
 		}
 	}()
 
-	test_utils.TestCtx, test_utils.CancelTests = context.WithCancel(context.Background())
+	testCtx, cancelTests = context.WithCancel(context.Background())
 	RunCore()
 	return
 }

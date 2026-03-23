@@ -1,49 +1,27 @@
 #include "include/ui/profile/dialog_edit_profile.h"
 
-#include "include/ui/profile/edit_http.h"
+#include "include/ui/profile/edit_socks_http.h"
 #include "include/ui/profile/edit_shadowsocks.h"
 #include "include/ui/profile/edit_chain.h"
 #include "include/ui/profile/edit_vmess.h"
-#include "include/ui/profile/edit_vless.h"
-#include "include/ui/profile/edit_anytls.h"
+#include "include/ui/profile/edit_trojan_vless.h"
+#include "include/ui/profile/edit_quic.h"
 #include "include/ui/profile/edit_wireguard.h"
-#include "include/ui/profile/edit_tailscale.h"
 #include "include/ui/profile/edit_ssh.h"
 #include "include/ui/profile/edit_custom.h"
 #include "include/ui/profile/edit_extra_core.h"
 
+#include "include/configs/proxy/includes.h"
+#include "include/configs/proxy/Preset.hpp"
+
 #include "3rdparty/qv2ray/v2/ui/widgets/editors/w_JsonEditor.hpp"
 #include "include/global/GuiUtils.hpp"
-#include "include/global/Utils.hpp"
 
 #include <QInputDialog>
+#include <QToolTip>
 
-#include "include/configs/common/TLS.h"
-#include "include/configs/common/utils.h"
-#include "include/configs/common/xrayStreamSetting.h"
-#include "include/database/ProfilesRepo.h"
-
-
-
-#include "include/ui/profile/edit_advanced.h"
-#include "include/ui/profile/edit_hysteria.h"
-#include "include/ui/profile/edit_socks.h"
-#include "include/ui/profile/edit_trojan.h"
-#include "include/ui/profile/edit_tuic.h"
-#include "include/ui/profile/edit_xrayvless.h"
-
-#define ADJUST_SIZE runOnThread([=,this] { adjustSize(); adjustPosition(mainwindow); }, this);
-#define LOAD_TYPE(a) ui->type->addItem(Configs::dataManager->profilesRepo->NewProfile(a)->outbound->DisplayType(), a);
-
-void DialogEditProfile::toggleSingboxWidgets(bool show) {
-    ui->stream_box->setVisible(show);
-    ui->right_all_w->setVisible(show);
-}
-
-void DialogEditProfile::toggleXrayWidgets(bool show) {
-    ui->xray_settings_box->setVisible(show);
-    ui->xray_widget->setVisible(show);
-}
+#define ADJUST_SIZE runOnUiThread([=] { adjustSize(); adjustPosition(mainwindow); }, this);
+#define LOAD_TYPE(a) ui->type->addItem(NekoGui::ProfileManager::NewProxyEntity(a)->bean->DisplayType(), a);
 
 DialogEditProfile::DialogEditProfile(const QString &_type, int profileOrGroupId, QWidget *parent)
     : QDialog(parent), ui(new Ui::DialogEditProfile) {
@@ -51,28 +29,35 @@ DialogEditProfile::DialogEditProfile(const QString &_type, int profileOrGroupId,
     ui->setupUi(this);
     ui->dialog_layout->setAlignment(ui->left, Qt::AlignTop);
 
-    // Xray init
-    ui->xray_security->addItems({"", "tls", "reality"});
-    ui->xray_network->addItems(Configs::XrayNetworks);
-    ui->xray_fp->addItems(Configs::tlsFingerprints);
-    ui->xray_mode->addItems(Configs::XrayXHTTPModes);
-    ui->xray_ed_length->setValidator(new QIntValidator(0, 8192));
-    toggleXrayWidgets(false);
-
     // network changed
     network_title_base = ui->network_box->title();
-    connect(ui->network, &QComboBox::currentTextChanged, this, [=,this](const QString &txt) {
+    connect(ui->network, &QComboBox::currentTextChanged, this, [=](const QString &txt) {
         ui->network_box->setTitle(network_title_base.arg(txt));
-        if (txt == "grpc") {
+        if (txt == "tcp") {
+            ui->header_type->setVisible(true);
+            ui->header_type_l->setVisible(true);
             ui->headers->setVisible(false);
             ui->headers_l->setVisible(false);
             ui->method->setVisible(false);
             ui->method_l->setVisible(false);
-            ui->path->setVisible(false);
-            ui->path_l->setVisible(false);
+            ui->path->setVisible(true);
+            ui->path_l->setVisible(true);
+            ui->host->setVisible(true);
+            ui->host_l->setVisible(true);
+        } else if (txt == "grpc") {
+            ui->header_type->setVisible(false);
+            ui->header_type_l->setVisible(false);
+            ui->headers->setVisible(false);
+            ui->headers_l->setVisible(false);
+            ui->method->setVisible(false);
+            ui->method_l->setVisible(false);
+            ui->path->setVisible(true);
+            ui->path_l->setVisible(true);
             ui->host->setVisible(false);
             ui->host_l->setVisible(false);
         } else if (txt == "ws" || txt == "httpupgrade") {
+            ui->header_type->setVisible(false);
+            ui->header_type_l->setVisible(false);
             ui->headers->setVisible(true);
             ui->headers_l->setVisible(true);
             ui->method->setVisible(false);
@@ -82,6 +67,8 @@ DialogEditProfile::DialogEditProfile(const QString &_type, int profileOrGroupId,
             ui->host->setVisible(true);
             ui->host_l->setVisible(true);
         } else if (txt == "http") {
+            ui->header_type->setVisible(false);
+            ui->header_type_l->setVisible(false);
             ui->headers->setVisible(true);
             ui->headers_l->setVisible(true);
             ui->method->setVisible(true);
@@ -91,6 +78,8 @@ DialogEditProfile::DialogEditProfile(const QString &_type, int profileOrGroupId,
             ui->host->setVisible(true);
             ui->host_l->setVisible(true);
         } else {
+            ui->header_type->setVisible(false);
+            ui->header_type_l->setVisible(false);
             ui->headers->setVisible(false);
             ui->headers_l->setVisible(false);
             ui->method->setVisible(false);
@@ -99,13 +88,6 @@ DialogEditProfile::DialogEditProfile(const QString &_type, int profileOrGroupId,
             ui->path_l->setVisible(false);
             ui->host->setVisible(false);
             ui->host_l->setVisible(false);
-        }
-        if (txt == "grpc") {
-            ui->service_name->setVisible(true);
-            ui->service_name_l->setVisible(true);
-        } else {
-            ui->service_name->setVisible(false);
-            ui->service_name_l->setVisible(false);
         }
         if (txt == "ws") {
             ui->ws_early_data_length->setVisible(true);
@@ -118,7 +100,7 @@ DialogEditProfile::DialogEditProfile(const QString &_type, int profileOrGroupId,
             ui->ws_early_data_name->setVisible(false);
             ui->ws_early_data_name_l->setVisible(false);
         }
-        if (!ui->utlsFingerprint->count()) ui->utlsFingerprint->addItems(Configs::tlsFingerprints);
+        if (!ui->utlsFingerprint->count()) ui->utlsFingerprint->addItems(Preset::SingBox::UtlsFingerPrint);
         int networkBoxVisible = 0;
         for (auto label: ui->network_box->findChildren<QLabel *>()) {
             if (!label->isHidden()) networkBoxVisible++;
@@ -129,10 +111,21 @@ DialogEditProfile::DialogEditProfile(const QString &_type, int profileOrGroupId,
     ui->network->removeItem(0);
 
     // security changed
-    connect(ui->security, &QComboBox::currentTextChanged, this, [=,this](const QString &txt) {
+    connect(ui->security, &QComboBox::currentTextChanged, this, [=](const QString &txt) {
         if (txt == "tls") {
             ui->security_box->setVisible(true);
             ui->tls_camouflage_box->setVisible(true);
+            ui->reality_pbk->setVisible(false);
+            ui->reality_pbk_l->setVisible(false);
+            ui->reality_sid->setVisible(false);
+            ui->reality_sid_l->setVisible(false);
+        } else if (txt == "reality") {
+            ui->security_box->setVisible(true);
+            ui->tls_camouflage_box->setVisible(true);
+            ui->reality_pbk->setVisible(true);
+            ui->reality_pbk_l->setVisible(true);
+            ui->reality_sid->setVisible(true);
+            ui->reality_sid_l->setVisible(true);
         } else {
             ui->security_box->setVisible(false);
             ui->tls_camouflage_box->setVisible(false);
@@ -141,14 +134,8 @@ DialogEditProfile::DialogEditProfile(const QString &_type, int profileOrGroupId,
     });
     emit ui->security->currentTextChanged(ui->security->currentText());
 
-    // for fragment
-    connect(ui->tls_frag, &QCheckBox::stateChanged, this, [=,this](bool state)
-    {
-        ui->tls_frag_fall_delay->setEnabled(state);
-    });
-
     // mux setting changed
-    connect(ui->multiplex, &QComboBox::currentTextChanged, this, [=,this](const QString &txt) {
+    connect(ui->multiplex, &QComboBox::currentTextChanged, this, [=](const QString &txt) {
         if (txt == "Off") {
             ui->brutal_enable->setCheckState(Qt::CheckState::Unchecked);
             ui->brutal_box->setEnabled(false);
@@ -157,70 +144,7 @@ DialogEditProfile::DialogEditProfile(const QString &_type, int profileOrGroupId,
         }
     });
 
-    // Advanced options
-    connect(ui->advanced_button, &QPushButton::clicked, this, [=,this]() {
-        auto advancedWidget = new EditAdvanced(this, ent);
-        advancedWidget->show();
-    });
-
-    // Xray
-    ui->xray_network_box->hide();
-    connect(ui->xray_network, &QComboBox::currentTextChanged, this, [=,this](const QString &txt) {
-        if (txt == "raw") {
-            ui->xray_network_box->setVisible(false);
-            if (ui->xray_security_box->isHidden()) ui->xray_widget->hide();
-        }
-        else {
-            ui->xray_widget->show();
-            ui->xray_network_box->setVisible(true);
-            if (txt == "xhttp") {
-                ui->xray_xhttp_box->setVisible(true);
-                ui->xray_ed_label->setVisible(false);
-                ui->xray_ed_length->setVisible(false);
-                ui->xray_headers_l->setVisible(true);
-                ui->xray_headers->setVisible(true);
-                ui->xray_multi_mode->setVisible(false);
-            } else {
-                ui->xray_xhttp_box->setVisible(false);
-                if (txt == "grpc") {
-                    ui->xray_ed_label->setVisible(false);
-                    ui->xray_ed_length->setVisible(false);
-                    ui->xray_headers_l->setVisible(false);
-                    ui->xray_headers->setVisible(false);
-                    ui->xray_multi_mode->setVisible(true);
-                } else {
-                    ui->xray_ed_label->setVisible(true);
-                    ui->xray_ed_length->setVisible(true);
-                    ui->xray_headers_l->setVisible(true);
-                    ui->xray_headers->setVisible(true);
-                    ui->xray_multi_mode->setVisible(false);
-                }
-            }
-        }
-        updateXrayCommons(txt);
-        ADJUST_SIZE
-    });
-
-    ui->xray_security_box->hide();
-    connect(ui->xray_security, &QComboBox::currentTextChanged, this, [=,this](const QString &txt) {
-        if (txt.isEmpty()) {
-            ui->xray_security_box->setVisible(false);
-            if (ui->xray_network_box->isHidden()) ui->xray_widget->hide();
-        }
-        else if (txt == "tls") {
-            ui->xray_widget->show();
-            ui->xray_security_box->setVisible(true);
-            ui->xray_tls_only->setVisible(true);
-            ui->xray_reality_box->setVisible(false);
-        } else {
-            ui->xray_widget->show();
-            ui->xray_security_box->setVisible(true);
-            ui->xray_tls_only->setVisible(false);
-            ui->xray_reality_box->setVisible(true);
-        }
-        ADJUST_SIZE
-    });
-
+    // 确定模式和 ent
     newEnt = _type != "";
     if (newEnt) {
         this->groupId = profileOrGroupId;
@@ -233,24 +157,24 @@ DialogEditProfile::DialogEditProfile(const QString &_type, int profileOrGroupId,
         LOAD_TYPE("trojan")
         LOAD_TYPE("vmess")
         LOAD_TYPE("vless")
-        ui->type->addItem("VLESS (Xray)", "xrayvless");
         LOAD_TYPE("hysteria")
+        LOAD_TYPE("hysteria2")
         LOAD_TYPE("tuic")
-        LOAD_TYPE("anytls")
         LOAD_TYPE("wireguard")
-        LOAD_TYPE("tailscale")
         LOAD_TYPE("ssh")
-        ui->type->addItem(tr("Custom (%1 outbound)").arg(software_core_name), "outbound");
-        ui->type->addItem(tr("Custom (%1 config)").arg(software_core_name), "fullconfig");
+        ui->type->addItem(tr("Custom (%1 outbound)").arg(software_core_name), "internal");
+        ui->type->addItem(tr("Custom (%1 config)").arg(software_core_name), "internal-full");
         ui->type->addItem(tr("Extra Core"), "extracore");
         LOAD_TYPE("chain")
 
         // type changed
-        connect(ui->type, &QComboBox::currentIndexChanged, this, [=,this](int index) {
+        connect(ui->type, &QComboBox::currentIndexChanged, this, [=](int index) {
             typeSelected(ui->type->itemData(index).toString());
         });
+
+        ui->apply_to_group->hide();
     } else {
-        this->ent = Configs::dataManager->profilesRepo->GetProfile(profileOrGroupId);
+        this->ent = NekoGui::profileManager->GetProfile(profileOrGroupId);
         if (this->ent == nullptr) return;
         this->type = ent->type;
         ui->type->setVisible(false);
@@ -269,12 +193,8 @@ void DialogEditProfile::typeSelected(const QString &newType) {
     type = newType;
     bool validType = true;
 
-    if (type == "http") {
-        auto _innerWidget = new EditHttp(this);
-        innerWidget = _innerWidget;
-        innerEditor = _innerWidget;
-    } else if (type == "socks") {
-        auto _innerWidget = new EditSocks(this);
+    if (type == "socks" || type == "http") {
+        auto _innerWidget = new EditSocksHttp(this);
         innerWidget = _innerWidget;
         innerEditor = _innerWidget;
     } else if (type == "shadowsocks") {
@@ -289,11 +209,11 @@ void DialogEditProfile::typeSelected(const QString &newType) {
         auto _innerWidget = new EditVMess(this);
         innerWidget = _innerWidget;
         innerEditor = _innerWidget;
-    } else if ( type == "vless") {
-        auto _innerWidget = new EditVless(this);
+    } else if (type == "trojan" || type == "vless") {
+        auto _innerWidget = new EditTrojanVLESS(this);
         innerWidget = _innerWidget;
         innerEditor = _innerWidget;
-        connect(_innerWidget->_flow, &QComboBox::currentTextChanged, _innerWidget, [=,this](const QString &txt)
+        connect(_innerWidget->flow_, &QComboBox::currentTextChanged, _innerWidget, [=](const QString &txt)
         {
             if (txt == "xtls-rprx-vision")
             {
@@ -303,55 +223,32 @@ void DialogEditProfile::typeSelected(const QString &newType) {
                 ui->multiplex->setDisabled(false);
             }
         });
-    } else if (type == "xrayvless") {
-        auto _innerWidget = new EditXrayVless(this);
-        innerWidget = _innerWidget;
-        innerEditor = _innerWidget;
-    } else if (type == "trojan") {
-        auto _innerWidget = new EditTrojan(this);
-        innerWidget = _innerWidget;
-        innerEditor = _innerWidget;
-    } else if (type == "hysteria") {
-        auto _innerWidget = new EditHysteria(this);
-        innerWidget = _innerWidget;
-        innerEditor = _innerWidget;
-        connect(_innerWidget->_protocol_version, &QComboBox::currentTextChanged, _innerWidget, [=,this](const QString &txt)
-        {
-            _innerWidget->editHysteriaLayout(txt);
-            ADJUST_SIZE
-        });
-    } else if (type == "tuic") {
-        auto _innerWidget = new EditTuic(this);
-        innerWidget = _innerWidget;
-        innerEditor = _innerWidget;
-    } else if (type == "anytls") {
-        auto _innerWidget = new EditAnyTLS(this);
+    } else if (type == "hysteria" || type == "hysteria2" || type == "tuic") {
+        auto _innerWidget = new EditQUIC(this);
         innerWidget = _innerWidget;
         innerEditor = _innerWidget;
     } else if (type == "wireguard") {
         auto _innerWidget = new EditWireguard(this);
         innerWidget = _innerWidget;
         innerEditor = _innerWidget;
-    } else if (type == "tailscale") {
-        auto _innerWidget = new EditTailScale(this);
-        innerWidget = _innerWidget;
-        innerEditor = _innerWidget;
     } else if (type == "ssh") {
         auto _innerWidget = new EditSSH(this);
         innerWidget = _innerWidget;
         innerEditor = _innerWidget;
-    } else if (type == "outbound" || type == "fullconfig" || type == "custom") {
+    } else if (type == "internal" || type == "internal-full" || type == "custom") {
         auto _innerWidget = new EditCustom(this);
         innerWidget = _innerWidget;
         innerEditor = _innerWidget;
-        customType = newEnt ? type : ent->Custom()->type;
+        customType = newEnt ? type : ent->CustomBean()->core;
         _innerWidget->preset_core = customType;
         type = "custom";
+        ui->apply_to_group->hide();
     } else if (type == "extracore")
     {
         auto _innerWidget = new EditExtraCore(this);
         innerWidget = _innerWidget;
         innerEditor = _innerWidget;
+        ui->apply_to_group->hide();
     } else {
         validType = false;
     }
@@ -362,107 +259,77 @@ void DialogEditProfile::typeSelected(const QString &newType) {
     }
 
     if (newEnt) {
-        this->ent = Configs::dataManager->profilesRepo->NewProfile(type);
+        this->ent = NekoGui::ProfileManager::NewProxyEntity(type);
         this->ent->gid = groupId;
     }
 
     // hide some widget
-    auto showAddressPort = type != "chain" && customType != "outbound" && customType != "fullconfig" && type != "extracore" && type != "tailscale";
+    auto showAddressPort = type != "chain" && customType != "internal" && customType != "internal-full" && type != "extracore";
     ui->address->setVisible(showAddressPort);
     ui->address_l->setVisible(showAddressPort);
     ui->port->setVisible(showAddressPort);
     ui->port_l->setVisible(showAddressPort);
 
-    if (ent->outbound->HasTLS() || ent->outbound->HasTransport()) {
+    // 右边 stream
+    auto stream = GetStreamSettings(ent->bean.get());
+    if (stream != nullptr) {
         ui->right_all_w->setVisible(true);
-        auto tls = ent->outbound->GetTLS();
-        auto transport = ent->outbound->GetTransport();
-        if (ent->outbound->MustTLS()) {
-            ui->security->setCurrentText("tls");
-            ui->security->setEnabled(false);
-        } else {
-            ui->security->setCurrentText(tls->enabled ? "tls" : "");
-            ui->security->setEnabled(true);
-        }
-        ui->network->setCurrentText(transport->type);
-        ui->path->setText(transport->path);
-        ui->host->setText(transport->host);
-        ui->method->setText(transport->method);
-        ui->sni->setText(tls->server_name);
-        ui->alpn->setText(tls->alpn.join(","));
+        ui->network->setCurrentText(stream->network);
+        ui->security->setCurrentText(stream->security);
+        ui->packet_encoding->setCurrentText(stream->packet_encoding);
+        ui->path->setText(stream->path);
+        ui->host->setText(stream->host);
+        ui->method->setText(stream->method);
+        ui->sni->setText(stream->sni);
+        ui->alpn->setText(stream->alpn);
         if (newEnt) {
-            ui->utlsFingerprint->setCurrentText(Configs::dataManager->settingsRepo->utlsFingerprint);
+            ui->utlsFingerprint->setCurrentText(NekoGui::dataStore->utlsFingerprint);
         } else {
-            ui->utlsFingerprint->setCurrentText(tls->utls->fingerPrint);
+            ui->utlsFingerprint->setCurrentText(stream->utlsFingerprint);
         }
-        ui->tls_frag->setChecked(tls->fragment);
-        ui->tls_frag_fall_delay->setEnabled(tls->fragment);
-        ui->tls_frag_fall_delay->setText(tls->fragment_fallback_delay);
-        ui->tls_rec_frag->setChecked(tls->record_fragment);
-        ui->insecure->setChecked(tls->insecure);
-        ui->headers->setText(Configs::getHeadersString(transport->headers));
-        ui->service_name->setText(transport->service_name);
-        ui->ws_early_data_name->setText(transport->early_data_header_name);
-        ui->ws_early_data_length->setText(Int2String(transport->max_early_data));
-        ui->reality_pbk->setText(tls->reality->public_key);
-        ui->reality_sid->setText(tls->reality->short_id);
-        CACHE.certificate = tls->certificate;
+        ui->insecure->setChecked(stream->allow_insecure);
+        ui->header_type->setCurrentText(stream->header_type);
+        ui->headers->setText(stream->headers);
+        ui->ws_early_data_name->setText(stream->ws_early_data_name);
+        ui->ws_early_data_length->setText(Int2String(stream->ws_early_data_length));
+        ui->reality_pbk->setText(stream->reality_pbk);
+        ui->reality_sid->setText(stream->reality_sid);
+        ui->multiplex->setCurrentIndex(ent->bean->mux_state);
+        ui->brutal_enable->setCheckState(ent->bean->enable_brutal ? Qt::CheckState::Checked : Qt::CheckState::Unchecked);
+        ui->brutal_speed->setText(Int2String(ent->bean->brutal_speed));
+        CACHE.certificate = stream->certificate;
     } else {
         ui->right_all_w->setVisible(false);
     }
 
-    if (ent->outbound->IsXray()) {
-        auto xrayStream = ent->outbound->GetXrayStream();
-        auto xrayMux = ent->outbound->GetXrayMultiplex();
-
-        updateXrayCommons(xrayStream->network);
-
-        ui->xray_xpaddingbytes->setText(xrayStream->xhttp->xPaddingBytes);
-        ui->xray_no_grpc->setChecked(xrayStream->xhttp->noGRPCHeader);
-        ui->xray_scMaxEachPostBytes->setText(xrayStream->xhttp->scMaxEachPostBytes);
-        ui->xray_scMinPostsIntervalMs->setText(xrayStream->xhttp->scMinPostsIntervalMs);
-        ui->xray_max_concurrency->setText(xrayStream->xhttp->maxConcurrency);
-        ui->xray_max_connections->setText(xrayStream->xhttp->maxConnections);
-        ui->xray_hMaxRequestTimes->setText(xrayStream->xhttp->hMaxRequestTimes);
-        ui->xray_hMaxReusableSecs->setText(xrayStream->xhttp->hMaxReusableSecs);
-        ui->xray_max_reuse_times->setText(xrayStream->xhttp->cMaxReuseTimes);
-        ui->xray_keep_alive_period->setText(Int2String(xrayStream->xhttp->hKeepAlivePeriod));
-        CACHE.XrayDownloadSettings = xrayStream->xhttp->downloadSettings;
-        ui->xray_downloadsettings_edit->setText(xrayStream->xhttp->downloadSettings.isEmpty() ? "Not Set" : "Already Set");
-
-        ui->xray_network->setCurrentText(xrayStream->network);
-        ui->xray_security->setCurrentText(xrayStream->security);
-        ui->xray_mux->setCurrentIndex(xrayMux->getMuxState());
-
-        ui->xray_sni->setText(xrayStream->security == "tls" ? xrayStream->TLS->serverName : xrayStream->reality->serverName);
-        ui->xray_fp->setCurrentText(xrayStream->security == "tls" ? xrayStream->TLS->fingerprint : xrayStream->reality->fingerprint);
-        ui->xray_alpn->setText(xrayStream->TLS->alpn.join(","));
-        ui->xray_insecure->setChecked(xrayStream->TLS->allowInsecure);
-        ui->xray_reality_pbk->setText(xrayStream->reality->password);
-        ui->xray_reality_sid->setText(xrayStream->reality->shortId);
-        ui->xray_reality_spiderx->setText(xrayStream->reality->spiderX);
-
-        toggleXrayWidgets(true);
-        toggleSingboxWidgets(false);
-    } else {
-        toggleXrayWidgets(false);
-        toggleSingboxWidgets(true);
+    // left: custom
+    CACHE.custom_config = ent->bean->custom_config;
+    CACHE.custom_outbound = ent->bean->custom_outbound;
+    bool show_custom_config = true;
+    bool show_custom_outbound = true;
+    if (type == "chain") {
+        show_custom_outbound = false;
+    } else if (type == "custom") {
+        if (customType == "internal") {
+            show_custom_outbound = false;
+        } else if (customType == "internal-full") {
+            show_custom_outbound = false;
+            show_custom_config = false;
+        }
+    } else if (type == "extracore")
+    {
+        show_custom_outbound = false;
+        show_custom_config = false;
     }
-
-    if (ent->outbound->HasMux()) {
-        auto mux = ent->outbound->GetMux();
-        ui->multiplex->setCurrentIndex(mux->getMuxState());
-        ui->brutal_enable->setChecked(mux->brutal->enabled);
-        ui->brutal_d_speed->setText(Int2String(mux->brutal->down_mbps));
-        ui->brutal_u_speed->setText(Int2String(mux->brutal->up_mbps));
-    }
+    ui->custom_box->setVisible(show_custom_outbound);
+    ui->custom_global_box->setVisible(show_custom_config);
 
     // 左边 bean
     auto old = ui->bean->layout()->itemAt(0)->widget();
     ui->bean->layout()->removeWidget(old);
     innerWidget->layout()->setContentsMargins(0, 0, 0, 0);
     ui->bean->layout()->addWidget(innerWidget);
-    ui->bean->setTitle(ent->outbound->DisplayType());
+    ui->bean->setTitle(ent->bean->DisplayType());
     delete old;
 
     // 左边 bean inner editor
@@ -470,38 +337,42 @@ void DialogEditProfile::typeSelected(const QString &newType) {
     innerEditor->get_edit_text_name = [&]() { return ui->name->text(); };
     innerEditor->get_edit_text_serverAddress = [&]() { return ui->address->text(); };
     innerEditor->get_edit_text_serverPort = [&]() { return ui->port->text(); };
-    innerEditor->editor_cache_updated = [=,this] { editor_cache_updated_impl(); };
+    innerEditor->editor_cache_updated = [=] { editor_cache_updated_impl(); };
     innerEditor->onStart(ent);
 
     // 左边 common
-    ui->name->setText(ent->outbound->name);
-    ui->address->setText(ent->outbound->GetAddress());
-    ui->port->setText(ent->outbound->GetPort());
+    ui->name->setText(ent->bean->name);
+    ui->address->setText(ent->bean->serverAddress);
+    ui->port->setText(Int2String(ent->bean->serverPort));
     ui->port->setValidator(QRegExpValidator_Number);
 
     // 星号
     ADD_ASTERISK(this)
-    if (ent->outbound->HasTransport()) {
+
+    if (type == "vmess" || type == "vless") {
+        ui->packet_encoding->setVisible(true);
+        ui->packet_encoding_l->setVisible(true);
+    } else {
+        ui->packet_encoding->setVisible(false);
+        ui->packet_encoding_l->setVisible(false);
+    }
+    if (type == "vmess" || type == "vless" || type == "trojan") {
         ui->network_l->setVisible(true);
         ui->network->setVisible(true);
-        if (ui->network->currentText() == "tcp") {
-            ui->network_box->setVisible(false);
-        } else {
-            ui->network_box->setVisible(true);
-        }
+        ui->network_box->setVisible(true);
     } else {
         ui->network_l->setVisible(false);
         ui->network->setVisible(false);
         ui->network_box->setVisible(false);
     }
-    if (ent->outbound->HasTLS()) {
+    if (type == "vmess" || type == "vless" || type == "trojan" || type == "http") {
         ui->security->setVisible(true);
         ui->security_l->setVisible(true);
     } else {
         ui->security->setVisible(false);
         ui->security_l->setVisible(false);
     }
-    if (ent->outbound->HasMux()) {
+    if (type == "vmess" || type == "vless" || type == "trojan" || type == "shadowsocks") {
         ui->multiplex->setVisible(true);
         ui->multiplex_l->setVisible(true);
         ui->brutal_box->setVisible(true);
@@ -516,8 +387,8 @@ void DialogEditProfile::typeSelected(const QString &newType) {
     }
     ui->stream_box->setVisible(streamBoxVisible);
 
-    auto rightNoBox = (ui->security_box->isHidden() && ui->network_box->isHidden() && ui->tls_camouflage_box->isHidden());
-    if (rightNoBox && !ent->outbound->HasTLS() && !ent->outbound->HasTransport() && !ui->right_all_w->isHidden()) {
+    auto rightNoBox = (ui->stream_box->isHidden() && ui->network_box->isHidden() && ui->security_box->isHidden());
+    if (rightNoBox && !ui->right_all_w->isHidden()) {
         ui->right_all_w->setVisible(false);
     }
 
@@ -526,38 +397,8 @@ void DialogEditProfile::typeSelected(const QString &newType) {
 
     // 第一次显示
     if (isHidden()) {
-        runOnThread([=,this] { show(); }, this);
+        runOnUiThread([=] { show(); }, this);
     }
-}
-
-void DialogEditProfile::updateXrayCommons(QString network) {
-    if (!ent->outbound->IsXray()) return;
-    auto stream = ent->outbound->GetXrayStream();
-
-    if (network == "xhttp") {
-        ui->xray_host->setText(stream->xhttp->host);
-        ui->xray_path->setText(stream->xhttp->path);
-        ui->xray_mode->setCurrentText(stream->xhttp->mode);
-        ui->xray_headers->setText(Configs::getHeadersString(stream->xhttp->headers));
-    } else if (network == "grpc") {
-        ui->xray_host->setText(stream->grpc->authority);
-        ui->xray_path->setText(stream->grpc->serviceName);
-        ui->xray_multi_mode->setChecked(stream->grpc->multiMode);
-    } else if (network == "ws") {
-        ui->xray_host->setText(stream->ws->host);
-        ui->xray_path->setText(stream->ws->path);
-        ui->xray_ed_length->setText(QString::number(stream->ws->ed));
-        ui->xray_headers->setText(Configs::getHeadersString(stream->ws->headers));
-    } else if(network == "httpupgrade") {
-        ui->xray_host->setText(stream->httpupgrade->host);
-        ui->xray_path->setText(stream->httpupgrade->path);
-        ui->xray_ed_length->setText(QString::number(stream->httpupgrade->ed));
-        ui->xray_headers->setText(Configs::getHeadersString(stream->httpupgrade->headers));
-    }
-}
-
-bool DialogEditProfile::validateHeaders() {
-    return !ui->headers->text().contains("|");
 }
 
 bool DialogEditProfile::onEnd() {
@@ -566,98 +407,46 @@ bool DialogEditProfile::onEnd() {
         return false;
     }
 
-    if (!validateHeaders()) return false;
+    // 左边
+    ent->bean->name = ui->name->text();
+    ent->bean->serverAddress = ui->address->text().remove(' ');
+    ent->bean->serverPort = ui->port->text().toInt();
 
-    ent->outbound->name = ui->name->text();
-    ent->outbound->SetAddress(ui->address->text().remove(' '));
-    ent->outbound->SetPort(ui->port->text().toInt());
+    // 右边 stream
+    auto stream = GetStreamSettings(ent->bean.get());
+    if (stream != nullptr) {
+        stream->network = ui->network->currentText();
+        stream->security = ui->security->currentText();
+        stream->packet_encoding = ui->packet_encoding->currentText();
+        stream->path = ui->path->text();
+        stream->host = ui->host->text();
+        stream->sni = ui->sni->text();
+        stream->alpn = ui->alpn->text();
+        stream->utlsFingerprint = ui->utlsFingerprint->currentText();
+        stream->allow_insecure = ui->insecure->isChecked();
+        stream->headers = ui->headers->text();
+        stream->header_type = ui->header_type->currentText();
+        stream->method = ui->method->text();
+        stream->ws_early_data_name = ui->ws_early_data_name->text();
+        stream->ws_early_data_length = ui->ws_early_data_length->text().toInt();
+        stream->reality_pbk = ui->reality_pbk->text();
+        stream->reality_sid = ui->reality_sid->text();
+        ent->bean->mux_state = ui->multiplex->currentIndex();
+        ent->bean->enable_brutal = ui->brutal_enable->isChecked();
+        ent->bean->brutal_speed = ui->brutal_speed->text().toInt();
+        stream->certificate = CACHE.certificate;
 
-    if (ent->outbound->HasTLS() || ent->outbound->HasTransport()) {
-        auto tls = ent->outbound->GetTLS();
-        auto transport = ent->outbound->GetTransport();
-        transport->type = ui->network->currentText();
-        tls->enabled = ui->security->currentText() == "tls";
-        transport->path = ui->path->text();
-        transport->host = ui->host->text();
-        tls->server_name = ui->sni->text();
-        tls->alpn = SplitAndTrim(ui->alpn->text(), ",");
-        tls->utls->fingerPrint = ui->utlsFingerprint->currentText();
-        tls->utls->enabled = !tls->utls->fingerPrint.isEmpty();
-        tls->fragment = ui->tls_frag->isChecked();
-        tls->fragment_fallback_delay = ui->tls_frag_fall_delay->text();
-        tls->record_fragment = ui->tls_rec_frag->isChecked();
-        tls->insecure = ui->insecure->isChecked();
-        transport->headers = Configs::parseHeaderPairs(ui->headers->text());
-        transport->method = ui->method->text();
-        transport->service_name = ui->service_name->text();
-        transport->early_data_header_name = ui->ws_early_data_name->text();
-        transport->max_early_data = ui->ws_early_data_length->text().toInt();
-        tls->reality->public_key = ui->reality_pbk->text();
-        tls->reality->short_id = ui->reality_sid->text();
-        tls->reality->enabled = !tls->reality->public_key.isEmpty();
-        tls->certificate = CACHE.certificate;
-    }
-    if (ent->outbound->HasMux()) {
-        auto mux = ent->outbound->GetMux();
-        mux->saveMuxState(ui->multiplex->currentIndex());
-        mux->brutal->enabled = ui->brutal_enable->isChecked();
-        mux->brutal->down_mbps = ui->brutal_d_speed->text().toInt();
-        mux->brutal->up_mbps = ui->brutal_u_speed->text().toInt();
-    }
-    if (ent->outbound->IsXray()) {
-        auto xrayStream = ent->outbound->GetXrayStream();
-        auto xrayMux = ent->outbound->GetXrayMultiplex();
-
-        xrayStream->network = ui->xray_network->currentText();
-        xrayStream->security = ui->xray_security->currentText();
-        xrayMux->saveMuxState(ui->xray_mux->currentIndex());
-
-        auto sni = ui->xray_sni->text();
-        if (xrayStream->security == "tls") xrayStream->TLS->serverName = sni;
-        else if (xrayStream->security == "reality") xrayStream->reality->serverName = sni;
-
-        auto fp = ui->xray_fp->currentText();
-        if (xrayStream->security == "tls") xrayStream->TLS->fingerprint = fp;
-        else if (xrayStream->security == "reality") xrayStream->reality->fingerprint = fp;
-
-        xrayStream->TLS->alpn = ui->xray_alpn->text().split(",");
-        xrayStream->TLS->allowInsecure = ui->xray_insecure->isChecked();
-        xrayStream->reality->password = ui->xray_reality_pbk->text();
-        xrayStream->reality->shortId = ui->xray_reality_sid->text();
-        xrayStream->reality->spiderX = ui->xray_reality_spiderx->text();
-
-        if (xrayStream->network == "xhttp") {
-            xrayStream->xhttp->host = ui->xray_host->text();
-            xrayStream->xhttp->path = ui->xray_path->text();
-            xrayStream->xhttp->mode = ui->xray_mode->currentText();
-            xrayStream->xhttp->headers = Configs::parseHeaderPairs(ui->xray_headers->text());
-            xrayStream->xhttp->xPaddingBytes = ui->xray_xpaddingbytes->text();
-            xrayStream->xhttp->noGRPCHeader = ui->xray_no_grpc->isChecked();
-            xrayStream->xhttp->scMaxEachPostBytes = ui->xray_scMaxEachPostBytes->text();
-            xrayStream->xhttp->scMinPostsIntervalMs = ui->xray_scMinPostsIntervalMs->text();
-            xrayStream->xhttp->maxConcurrency = ui->xray_max_concurrency->text();
-            xrayStream->xhttp->maxConnections = ui->xray_max_connections->text();
-            xrayStream->xhttp->hMaxRequestTimes = ui->xray_hMaxRequestTimes->text();
-            xrayStream->xhttp->hMaxReusableSecs = ui->xray_hMaxReusableSecs->text();
-            xrayStream->xhttp->cMaxReuseTimes = ui->xray_max_reuse_times->text();
-            xrayStream->xhttp->hKeepAlivePeriod = ui->xray_keep_alive_period->text().toLongLong();
-            xrayStream->xhttp->downloadSettings = CACHE.XrayDownloadSettings;
-        } else if (xrayStream->network == "grpc") {
-            xrayStream->grpc->authority = ui->xray_host->text();
-            xrayStream->grpc->serviceName = ui->xray_path->text();
-            xrayStream->grpc->multiMode = ui->xray_multi_mode->isChecked();
-        } else if (xrayStream->network == "ws") {
-            xrayStream->ws->host = ui->xray_host->text();
-            xrayStream->ws->path = ui->xray_path->text();
-            xrayStream->ws->ed = ui->xray_ed_length->text().toInt();
-            xrayStream->ws->headers = Configs::parseHeaderPairs(ui->xray_headers->text());
-        } else if (xrayStream->network == "httpupgrade") {
-            xrayStream->httpupgrade->host = ui->xray_host->text();
-            xrayStream->httpupgrade->path = ui->xray_path->text();
-            xrayStream->httpupgrade->ed = ui->xray_ed_length->text().toInt();
-            xrayStream->httpupgrade->headers = Configs::parseHeaderPairs(ui->xray_headers->text());
+        bool validHeaders;
+        stream->GetHeaderPairs(&validHeaders);
+        if (!validHeaders) {
+            MW_show_log("Headers are not valid");
+            return false;
         }
     }
+
+    // cached custom
+    ent->bean->custom_outbound = CACHE.custom_outbound;
+    ent->bean->custom_config = CACHE.custom_config;
 
     return true;
 }
@@ -672,13 +461,13 @@ void DialogEditProfile::accept() {
     QStringList msg = {"accept"};
 
     if (newEnt) {
-        auto ok = Configs::dataManager->profilesRepo->AddProfile(ent);
+        auto ok = NekoGui::profileManager->AddProfile(ent);
         if (!ok) {
             MessageBoxWarning("???", "id exists");
         }
     } else {
-        auto changed = Configs::dataManager->profilesRepo->Save(ent);
-        if (changed && Configs::dataManager->settingsRepo->started_id == ent->id) msg << "restart";
+        auto changed = ent->Save();
+        if (changed && NekoGui::dataStore->started_id == ent->id) msg << "restart";
     }
 
     MW_dialog_message(Dialog_DialogEditProfile, msg.join(","));
@@ -693,9 +482,17 @@ void DialogEditProfile::editor_cache_updated_impl() {
     } else {
         ui->certificate_edit->setText(tr("Already set"));
     }
-    if (ent->outbound->IsXray()) {
-        ui->xray_downloadsettings_edit->setText(CACHE.XrayDownloadSettings.isEmpty() ? "Not Set" : "Already Set");
+    if (CACHE.custom_outbound.isEmpty()) {
+        ui->custom_outbound_edit->setText(tr("Not set"));
+    } else {
+        ui->custom_outbound_edit->setText(tr("Already set"));
     }
+    if (CACHE.custom_config.isEmpty()) {
+        ui->custom_config_edit->setText(tr("Not set"));
+    } else {
+        ui->custom_config_edit->setText(tr("Already set"));
+    }
+
     // CACHE macro
     for (auto a: innerEditor->get_editor_cached()) {
         if (a.second.isEmpty()) {
@@ -706,21 +503,109 @@ void DialogEditProfile::editor_cache_updated_impl() {
     }
 }
 
+void DialogEditProfile::on_custom_outbound_edit_clicked() {
+    C_EDIT_JSON_ALLOW_EMPTY(custom_outbound)
+    editor_cache_updated_impl();
+}
+
+void DialogEditProfile::on_custom_config_edit_clicked() {
+    C_EDIT_JSON_ALLOW_EMPTY(custom_config)
+    editor_cache_updated_impl();
+}
+
 void DialogEditProfile::on_certificate_edit_clicked() {
     bool ok;
-    auto txt = QInputDialog::getMultiLineText(this, tr("Certificate"), "", CACHE.certificate.join("\n"), &ok);
+    auto txt = QInputDialog::getMultiLineText(this, tr("Certificate"), "", CACHE.certificate, &ok);
     if (ok) {
-        CACHE.certificate = txt.split("\n", Qt::SkipEmptyParts);
+        CACHE.certificate = txt;
         editor_cache_updated_impl();
     }
 }
 
-void DialogEditProfile::on_xray_downloadsettings_edit_clicked() {
-    auto editor = new JsonEditor(QString2QJsonObject(CACHE.XrayDownloadSettings), this);
-    auto result = editor->OpenEditor();
-    if (!result.isEmpty()) CACHE.XrayDownloadSettings = QJsonObject2QString(result, true);
-    else CACHE.XrayDownloadSettings.clear();
-    editor->deleteLater();
+void DialogEditProfile::on_apply_to_group_clicked() {
+    if (apply_to_group_ui.empty()) {
+        apply_to_group_ui[ui->multiplex] = new FloatCheckBox(ui->multiplex, this);
+        apply_to_group_ui[ui->sni] = new FloatCheckBox(ui->sni, this);
+        apply_to_group_ui[ui->alpn] = new FloatCheckBox(ui->alpn, this);
+        apply_to_group_ui[ui->host] = new FloatCheckBox(ui->host, this);
+        apply_to_group_ui[ui->path] = new FloatCheckBox(ui->path, this);
+        apply_to_group_ui[ui->utlsFingerprint] = new FloatCheckBox(ui->utlsFingerprint, this);
+        apply_to_group_ui[ui->insecure] = new FloatCheckBox(ui->insecure, this);
+        apply_to_group_ui[ui->certificate_edit] = new FloatCheckBox(ui->certificate_edit, this);
+        apply_to_group_ui[ui->custom_config_edit] = new FloatCheckBox(ui->custom_config_edit, this);
+        apply_to_group_ui[ui->custom_outbound_edit] = new FloatCheckBox(ui->custom_outbound_edit, this);
+        ui->apply_to_group->setText(tr("Confirm"));
+    } else {
+        auto group = NekoGui::profileManager->GetGroup(ent->gid);
+        if (group == nullptr) {
+            MessageBoxWarning("failed", "unknown group");
+            return;
+        }
+        // save this
+        if (onEnd()) {
+            ent->Save();
+        } else {
+            MessageBoxWarning("failed", "failed to save");
+            return;
+        }
+        // copy keys
+        for (const auto &pair: apply_to_group_ui) {
+            if (pair.second->isChecked()) {
+                do_apply_to_group(group, pair.first);
+            }
+            delete pair.second;
+        }
+        apply_to_group_ui.clear();
+        ui->apply_to_group->setText(tr("Apply settings to this group"));
+    }
+}
 
-    editor_cache_updated_impl();
+void DialogEditProfile::do_apply_to_group(const std::shared_ptr<NekoGui::Group> &group, QWidget *key) {
+    auto stream = GetStreamSettings(ent->bean.get());
+
+    auto copyStream = [=](void *p) {
+        for (const auto &profile: group->Profiles()) {
+            auto newStream = GetStreamSettings(profile->bean.get());
+            if (newStream == nullptr) continue;
+            if (stream == newStream) continue;
+            newStream->_setValue(stream->_name(p), p);
+            // qDebug() << newStream->ToJsonBytes();
+            profile->Save();
+        }
+    };
+
+    auto copyBean = [=](void *p) {
+        for (const auto &profile: group->Profiles()) {
+            if (profile == ent) continue;
+            profile->bean->_setValue(ent->bean->_name(p), p);
+            // qDebug() << profile->bean->ToJsonBytes();
+            profile->Save();
+        }
+    };
+
+    if (key == ui->multiplex) {
+        copyStream(&ent->bean->mux_state);
+    } else if (key == ui->brutal_enable) {
+        copyStream(&ent->bean->enable_brutal);
+    } else if (key == ui->brutal_speed) {
+        copyStream(&ent->bean->brutal_speed);
+    } else if (key == ui->sni) {
+        copyStream(&stream->sni);
+    } else if (key == ui->alpn) {
+        copyStream(&stream->alpn);
+    } else if (key == ui->host) {
+        copyStream(&stream->host);
+    } else if (key == ui->path) {
+        copyStream(&stream->path);
+    } else if (key == ui->utlsFingerprint) {
+        copyStream(&stream->utlsFingerprint);
+    } else if (key == ui->insecure) {
+        copyStream(&stream->allow_insecure);
+    } else if (key == ui->certificate_edit) {
+        copyStream(&stream->certificate);
+    } else if (key == ui->custom_config_edit) {
+        copyBean(&ent->bean->custom_config);
+    } else if (key == ui->custom_outbound_edit) {
+        copyBean(&ent->bean->custom_outbound);
+    }
 }

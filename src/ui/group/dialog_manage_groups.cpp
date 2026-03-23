@@ -1,5 +1,6 @@
 #include "include/ui/group/dialog_manage_groups.h"
 
+#include "include/dataStore/Database.hpp"
 #include "include/configs/sub/GroupUpdater.hpp"
 #include "include/global/GuiUtils.hpp"
 #include "include/ui/group/GroupItem.h"
@@ -9,11 +10,8 @@
 #include <QListWidgetItem>
 #include <QMessageBox>
 
-#include "include/database/GroupsRepo.h"
-
-
 #define AddGroupToListIfExist(_id)                       \
-    auto __ent = Configs::dataManager->groupsRepo->GetGroup(_id); \
+    auto __ent = NekoGui::profileManager->GetGroup(_id); \
     if (__ent != nullptr) {                              \
         auto wI = new QListWidgetItem();                 \
         auto w = new GroupItem(this, __ent, wI);         \
@@ -25,11 +23,11 @@
 DialogManageGroups::DialogManageGroups(QWidget *parent) : QDialog(parent), ui(new Ui::DialogManageGroups) {
     ui->setupUi(this);
 
-    for (auto id: Configs::dataManager->groupsRepo->GetGroupsTabOrder()) {
+    for (auto id: NekoGui::profileManager->groupsTabOrder) {
         AddGroupToListIfExist(id)
     }
 
-    connect(ui->listWidget, &QListWidget::itemDoubleClicked, this, [=,this](QListWidgetItem *wI) {
+    connect(ui->listWidget, &QListWidget::itemDoubleClicked, this, [=](QListWidgetItem *wI) {
         auto w = dynamic_cast<GroupItem *>(ui->listWidget->itemWidget(wI));
         emit w->edit_clicked();
     });
@@ -40,13 +38,13 @@ DialogManageGroups::~DialogManageGroups() {
 }
 
 void DialogManageGroups::on_add_clicked() {
-    auto ent = Configs::dataManager->groupsRepo->NewGroup();
+    auto ent = NekoGui::ProfileManager::NewGroup();
     auto dialog = new DialogEditGroup(ent, this);
     int ret = dialog->exec();
     dialog->deleteLater();
 
     if (ret == QDialog::Accepted) {
-        Configs::dataManager->groupsRepo->AddGroup(ent);
+        NekoGui::profileManager->AddGroup(ent);
         AddGroupToListIfExist(ent->id);
         MW_dialog_message(Dialog_DialogManageGroups, "refresh-1");
     }

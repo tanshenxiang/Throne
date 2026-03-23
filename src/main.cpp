@@ -11,20 +11,16 @@
 #include <QThread>
 #include <3rdparty/WinCommander.hpp>
 
-
-#include "include/global/Configs.hpp"
+#include "include/global/NekoGui.hpp"
 
 #include "include/ui/mainwindow_interface.h"
 
 #ifdef Q_OS_WIN
 #include "include/sys/windows/MiniDump.h"
 #include "include/sys/windows/eventHandler.h"
-#include "include/sys/windows/WinVersion.h"
-#include <qfontdatabase.h>
 #endif
 #ifdef Q_OS_LINUX
-#include <include/sys/linux/coreDump.h>
-#include <qfontdatabase.h>
+#include "include/sys/linux/desktopinfo.h"
 #endif
 
 void signal_handler(int signum) {
@@ -59,37 +55,17 @@ void loadTranslate(const QString& locale) {
     }
 }
 
-#define LOCAL_SERVER_PREFIX "throne-"
+#define LOCAL_SERVER_PREFIX "nekoray-"
 
 int main(int argc, char* argv[]) {
     // Core dump
 #ifdef Q_OS_WIN
     Windows_SetCrashHandler();
 #endif
-#ifdef Q_OS_LINUX
-    enable_core_dumps();
-#endif
 
     QApplication::setAttribute(Qt::AA_DontUseNativeDialogs);
     QApplication::setQuitOnLastWindowClosed(false);
     QApplication a(argc, argv);
-
-#if !defined(Q_OS_MACOS) && (QT_VERSION >= QT_VERSION_CHECK(6,9,0))
-    // Load the emoji fonts
-#ifdef Q_OS_WIN
-    int fontId = QFontDatabase::addApplicationFont(WinVersion::IsBuildNumGreaterOrEqual(BuildNumber::Windows_11_22H2) ? ":/font/notoEmoji" : ":/font/Twemoji");
-#else
-    int fontId = QFontDatabase::addApplicationFont(":/font/notoEmoji");
-#endif
-    if (fontId >= 0)
-    {
-        QStringList fontFamilies = QFontDatabase::applicationFontFamilies(fontId);
-        QFontDatabase::setApplicationEmojiFontFamilies(fontFamilies);
-    } else
-    {
-        qDebug() << "could not load emoji font!";
-    }
-#endif
 
     // Clean
     QDir::setCurrent(QApplication::applicationDirPath());
@@ -97,19 +73,34 @@ int main(int argc, char* argv[]) {
         QFile::remove("updater.old");
     }
 
-    QStringList arguments = QApplication::arguments();
+    // Flags
+    NekoGui::dataStore->argv = QApplication::arguments();
+    if (NekoGui::dataStore->argv.contains("-many")) NekoGui::dataStore->flag_many = true;
+    if (NekoGui::dataStore->argv.contains("-appdata")) {
+        NekoGui::dataStore->flag_use_appdata = true;
+        int appdataIndex = NekoGui::dataStore->argv.indexOf("-appdata");
+        if (NekoGui::dataStore->argv.size() > appdataIndex + 1 && !NekoGui::dataStore->argv.at(appdataIndex + 1).startsWith("-")) {
+            NekoGui::dataStore->appdataDir = NekoGui::dataStore->argv.at(appdataIndex + 1);
+        }
+    }
+    if (NekoGui::dataStore->argv.contains("-tray")) NekoGui::dataStore->flag_tray = true;
+    if (NekoGui::dataStore->argv.contains("-debug")) NekoGui::dataStore->flag_debug = true;
+    if (NekoGui::dataStore->argv.contains("-flag_restart_tun_on")) NekoGui::dataStore->flag_restart_tun_on = true;
+    if (NekoGui::dataStore->argv.contains("-flag_restart_dns_set")) NekoGui::dataStore->flag_dns_set = true;
+    if (NekoGui::dataStore->argv.contains("-flag_reorder")) NekoGui::dataStore->flag_reorder = true;
+#ifdef NKR_CPP_USE_APPDATA
+    NekoGui::dataStore->flag_use_appdata = true; // Example: Package & MacOS
+#endif
+#ifdef NKR_CPP_DEBUG
+    NekoGui::dataStore->flag_debug = true;
+#endif
 
     // dirs & clean
     auto wd = QDir(QApplication::applicationDirPath());
-    if (arguments.contains("-appdata")) {
-        QString appDataDir;
-        int appdataIndex = arguments.indexOf("-appdata");
-        if (arguments.size() > appdataIndex + 1 && !arguments.at(appdataIndex + 1).startsWith("-")) {
-            appDataDir = arguments.at(appdataIndex + 1);
-        }
-        QApplication::setApplicationName("Throne");
-        if (!appDataDir.isEmpty()) {
-            wd.setPath(appDataDir);
+    if (NekoGui::dataStore->flag_use_appdata) {
+        QApplication::setApplicationName("nekoray");
+        if (!NekoGui::dataStore->appdataDir.isEmpty()) {
+            wd.setPath(NekoGui::dataStore->appdataDir);
         } else {
             wd.setPath(QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation));
         }
@@ -119,30 +110,6 @@ int main(int argc, char* argv[]) {
     QDir::setCurrent(wd.absoluteFilePath("config"));
     QDir("temp").removeRecursively();
 
-    // Load database
-    Configs::initDB(QString(QDir::currentPath() + QDir::separator() + "throne.db").toStdString());
-
-    // Store Flags
-    Configs::dataManager->settingsRepo->argv = arguments;
-    if (Configs::dataManager->settingsRepo->argv.contains("-many")) Configs::dataManager->settingsRepo->flag_many = true;
-    if (Configs::dataManager->settingsRepo->argv.contains("-appdata")) {
-        Configs::dataManager->settingsRepo->flag_use_appdata = true;
-        int appdataIndex = Configs::dataManager->settingsRepo->argv.indexOf("-appdata");
-        if (Configs::dataManager->settingsRepo->argv.size() > appdataIndex + 1 && !Configs::dataManager->settingsRepo->argv.at(appdataIndex + 1).startsWith("-")) {
-            Configs::dataManager->settingsRepo->appdataDir = Configs::dataManager->settingsRepo->argv.at(appdataIndex + 1);
-        }
-    }
-    if (Configs::dataManager->settingsRepo->argv.contains("-tray")) Configs::dataManager->settingsRepo->flag_tray = true;
-    if (Configs::dataManager->settingsRepo->argv.contains("-debug")) Configs::dataManager->settingsRepo->flag_debug = true;
-    if (Configs::dataManager->settingsRepo->argv.contains("-flag_restart_tun_on")) Configs::dataManager->settingsRepo->flag_restart_tun_on = true;
-    if (Configs::dataManager->settingsRepo->argv.contains("-flag_restart_dns_set")) Configs::dataManager->settingsRepo->flag_dns_set = true;
-#ifdef NKR_CPP_USE_APPDATA
-    Configs::dataManager->settingsRepo->flag_use_appdata = true; // Example: Package & MacOS
-#endif
-#ifdef NKR_CPP_DEBUG
-    Configs::dataManager->settingsRepo->flag_debug = true;
-#endif
-
 #ifdef Q_OS_LINUX
     QApplication::addLibraryPath(QApplication::applicationDirPath() + "/usr/plugins");
 #endif
@@ -151,11 +118,9 @@ int main(int argc, char* argv[]) {
     DS_cores = new QThread;
     DS_cores->start();
 
-    LogThread = new QThread;
-    LogThread->start();
-
 // icons
     QIcon::setFallbackSearchPaths(QStringList{
+        ":/nekoray",
         ":/icon",
     });
 
@@ -164,23 +129,58 @@ int main(int argc, char* argv[]) {
         QIcon::setThemeName("breeze");
     }
 
+    // Dir
+    QDir dir;
+    bool dir_success = true;
+    if (!dir.exists("profiles")) {
+        dir_success &= dir.mkdir("profiles");
+    }
+    if (!dir.exists("groups")) {
+        dir_success &= dir.mkdir("groups");
+    }
+    if (!dir.exists(ROUTES_PREFIX_NAME)) {
+        dir_success &= dir.mkdir(ROUTES_PREFIX_NAME);
+    }
+    if (!dir.exists(RULE_SETS_DIR)) {
+        dir_success &= dir.mkdir(RULE_SETS_DIR);
+    }
+    if (!dir_success) {
+        QMessageBox::critical(nullptr, "Error", "No permission to write " + dir.absolutePath());
+        return 1;
+    }
+
+    // Load dataStore
+    NekoGui::dataStore->fn = "groups/nekobox.json";
+    auto isLoaded = NekoGui::dataStore->Load();
+    if (!isLoaded) {
+        NekoGui::dataStore->Save();
+    }
+
 #ifdef Q_OS_WIN
-    if (Configs::dataManager->settingsRepo->windows_set_admin && !Configs::IsAdmin() && !Configs::dataManager->settingsRepo->disable_run_admin)
+    if (NekoGui::dataStore->windows_set_admin && !NekoGui::IsAdmin() && !NekoGui::dataStore->disable_run_admin)
     {
-        Configs::dataManager->settingsRepo->windows_set_admin = false; // so that if permission denied, we will run as user on the next run
-        Configs::dataManager->settingsRepo->Save();
+        NekoGui::dataStore->windows_set_admin = false; // so that if permission denied, we will run as user on the next run
+        NekoGui::dataStore->Save();
         WinCommander::runProcessElevated(QApplication::applicationFilePath(), {}, "", WinCommander::SW_NORMAL, false);
         QApplication::quit();
         return 0;
     }
 #endif
 
-    // dataManager->settingsRepo & Flags
-    if (Configs::dataManager->settingsRepo->start_minimal) Configs::dataManager->settingsRepo->flag_tray = true;
+    // Datastore & Flags
+    if (NekoGui::dataStore->start_minimal) NekoGui::dataStore->flag_tray = true;
+
+    // load routing
+    NekoGui::dataStore->routing = std::make_unique<NekoGui::Routing>();
+    NekoGui::dataStore->routing->fn = ROUTES_PREFIX + "Default";
+    isLoaded = NekoGui::dataStore->routing->Load();
+    if (!isLoaded) {
+        NekoGui::dataStore->routing->Save();
+    }
 
     // Translate
     QString locale;
-    switch (Configs::dataManager->settingsRepo->language) {
+    switch (NekoGui::dataStore->language) {
         case 1: // English
             break;
         case 2:
@@ -198,6 +198,10 @@ int main(int argc, char* argv[]) {
     QGuiApplication::tr("QT_LAYOUT_DIRECTION");
     loadTranslate(locale);
 
+    // Signals
+    signal(SIGTERM, signal_handler);
+    signal(SIGINT, signal_handler);
+
     // Check if another instance is running
     QByteArray hashBytes = QCryptographicHash::hash(wd.absolutePath().toUtf8(), QCryptographicHash::Md5).toBase64(QByteArray::OmitTrailingEquals);
     hashBytes.replace('+', '0').replace('/', '1');
@@ -214,6 +218,7 @@ int main(int argc, char* argv[]) {
 
     // QLocalServer
     QLocalServer server(qApp);
+    QLocalServer::removeServer(serverName);
     server.setSocketOptions(QLocalServer::WorldAccessOption);
     if (!server.listen(serverName)) {
         qWarning() << "Failed to start QLocalServer! Error:" << server.errorString();
@@ -226,28 +231,10 @@ int main(int argc, char* argv[]) {
         // raise main window
         MW_dialog_message("", "Raise");
     });
-    QObject::connect(qApp, &QApplication::aboutToQuit, [&]
-    {
-        server.close();
-        QLocalServer::removeServer(serverName);
-    });
-
-#ifdef Q_OS_LINUX
-    signal(SIGTERM, signal_handler);
-    signal(SIGINT, signal_handler);
-#endif
 
 #ifdef Q_OS_WIN
     auto eventFilter = new PowerOffTaskkillFilter(signal_handler);
     a.installNativeEventFilter(eventFilter);
-#endif
-
-#ifdef Q_OS_MACOS
-    QObject::connect(qApp, &QGuiApplication::commitDataRequest, [&](QSessionManager &manager)
-    {
-        Q_UNUSED(manager);
-        signal_handler(0);
-    });
 #endif
 
     UI_InitMainWindow();
