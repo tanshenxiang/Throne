@@ -161,6 +161,8 @@ jobs:
         if: matrix.platform == 'windows-latest'
         run: |
           cp .\script\windows_installer.nsi .
+          choco install nsis -y
+          refreshenv
           makensis windows_installer.nsi
           cp NekoraySetup.exe deployment/
       - name: Linux - Generate MakeFile and Build
