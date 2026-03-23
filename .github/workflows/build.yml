@@ -57,6 +57,7 @@ jobs:
         if: steps.cache-common.outputs.cache-hit != 'true'
         shell: bash
         run: |
+          chmod +x ./script/build_go.sh ./script/build_public_res.sh
           [ ${{ matrix.cross_os }} == public_res ] || GOOS=${{ matrix.cross_os }} GOARCH=${{ matrix.cross_arch }} ./script/build_go.sh
           [ ${{ matrix.cross_os }} == public_res ] || exit 0
           ./script/build_public_res.sh
