@@ -35,7 +35,7 @@ jobs:
             cross_arch: arm64
             go_version: "1.24.4"
       fail-fast: false
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
       - name: Checking out sources
         uses: actions/checkout@v4.2.2
@@ -198,7 +198,7 @@ jobs:
   publish:
     name: Pack & Publish Release
     if: github.event.inputs.artifact-pack != 'y'
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     needs:
       - build-cpp
     permissions:
