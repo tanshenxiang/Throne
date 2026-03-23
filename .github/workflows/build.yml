@@ -90,7 +90,7 @@ jobs:
             qt_version: "6.9.1"
             target: arm64
       fail-fast: false
-    runs-on: ${{ matrix.platform }}
+    runs-on: self-hosted
     env:
       ACTIONS_ALLOW_UNSECURE_COMMANDS: true
     steps:
