@@ -138,8 +138,8 @@ jobs:
       - name: Build Dependencies
         shell: bash
         if: steps.cache-deps.outputs.cache-hit != 'true'
-        run: 
-           chmod +x ./script/build_deps_all.sh
+        run: |
+          chmod +x ./script/build_deps_all.sh
            ./script/build_deps_all.sh ${{ matrix.target }}
       # ========================================================================================================= Generate MakeFile and Build
       - name: Windows - Generate MakeFile and Build
